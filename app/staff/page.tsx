@@ -300,6 +300,25 @@ export default function StaffCenterPage() {
       </main>
     );
   }
+  if (notStaff) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-900 p-8 text-center">
+          <p className="text-sm text-rose-300">無法進入員工中心</p>
+          <h1 className="mt-2 text-2xl font-bold">你目前不是員工</h1>
+          <p className="mt-3 text-sm text-zinc-400">
+            系統沒有在 players 表找到你的 Discord ID。
+          </p>
+          <button
+            onClick={logout}
+            className="mt-6 w-full rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
+          >
+            重新登入
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">

@@ -114,7 +114,7 @@ export default function Home() {
       .select("*")
       .order("created_at", { ascending: false });    
     const { data: orderData, error: orderError } = await supabase
-      .from("salary_orders")
+      .from("play_orders")
       .select("*")
       .order("date", { ascending: false });
     if (staffError) {
@@ -231,7 +231,7 @@ export default function Home() {
     if (!orderForm.item.trim()) return;
     if (!Number(orderForm.amount)) return;
     const { data, error } = await supabase
-      .from("salary_orders")
+      .from("play_orders")
       .insert({
         date: orderForm.date,
         staff_id: orderForm.staffId,

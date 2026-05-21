@@ -12,7 +12,7 @@ import {
   LogOut,
 } from "lucide-react";
 
-type StaffType = "陪陪人員" | "遊戲技術人員";
+type StaffType = "陪陪人員" | "遊戲技術人員" | "經理級以上";
 type Rank = "新手" | "資深" | "核心";
 type OrderType = "訂單" | "打賞";
 
@@ -41,6 +41,7 @@ type Order = {
 };
 
 const OPENING_END_DATE = "2026-09-01";
+const MANAGER_START_DATE = "2026-05-01";
 
 function money(value: number) {
   return `NT$ ${value.toLocaleString("zh-TW")}`;
@@ -61,6 +62,19 @@ function calculateSalary(order: Order, staff?: Staff) {
     };
   }
 
+  const isManagerPeriod =
+    staff.staffType === "經理級以上" && order.date >= MANAGER_START_DATE;
+
+  if (isManagerPeriod) {
+    const salaryAmount = Math.round(order.amount * 0.95);
+    return {
+      salaryRate: 95,
+      companyRate: 5,
+      salaryAmount,
+      companyAmount: order.amount - salaryAmount,
+      ruleName: "經理制度：公司抽 5%",
+    };
+  }
   const isOpeningPeriod = order.date < OPENING_END_DATE;
 
   if (isOpeningPeriod) {
@@ -85,7 +99,9 @@ function calculateSalary(order: Order, staff?: Staff) {
     if (staff.rank === "資深") salaryRate = 85;
     if (staff.rank === "核心") salaryRate = 90;
   }
-
+  if (staff.staffType === "經理級以上") {
+    salaryRate = 95;
+  }
   const salaryAmount = Math.round(order.amount * (salaryRate / 100));
 
   return {
@@ -147,7 +163,7 @@ export default function StaffCenterPage() {
       {
         id: staffData.discord_id,
         name: staffData.name || staffData.discord_id,
-        staffType: "陪陪人員",
+        staffType: staffData.staff_type || "陪陪人員",
         rank: "新手",
         paymentMethod: "未設定",
         game: staffData.game || "",

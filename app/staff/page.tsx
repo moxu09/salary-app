@@ -7,9 +7,9 @@ import {
   ReceiptText,
   Wallet,
   Home,
-  Clock,
   CheckCircle2,
   PauseCircle,
+  LogOut,
 } from "lucide-react";
 
 type StaffType = "陪陪人員" | "遊戲技術人員";
@@ -96,7 +96,17 @@ function calculateSalary(order: Order, staff?: Staff) {
     ruleName: "九月後正式薪資制度",
   };
 }
-
+function getDiscordId(user: any) {
+  return (
+    user?.user_metadata?.provider_id ||
+    user?.user_metadata?.sub ||
+    user?.identities?.find((identity: any) => identity.provider === "discord")
+      ?.identity_data?.sub ||
+    user?.identities?.find((identity: any) => identity.provider === "discord")
+      ?.id ||
+    ""
+  );
+}
 export default function StaffCenterPage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -104,14 +114,16 @@ export default function StaffCenterPage() {
   const [selectedMonth, setSelectedMonth] = useState("2026-05");
   const [activePage, setActivePage] = useState<"home" | "orders" | "salary" | "profile">("home");
   const [loading, setLoading] = useState(true);
-
-  async function loadData() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [notStaff, setNotStaff] = useState(false);    
+  async function loadData(discordId: string) {
     setLoading(true);
 
     const { data: staffData, error: staffError } = await supabase
       .from("players")
       .select("*")
-      .order("created_at", { ascending: false });
+      .eq("discord_id", discordId)
+      .single();
 
     const { data: orderData, error: orderError } = await supabase
       .from("salary_orders")
@@ -126,20 +138,27 @@ export default function StaffCenterPage() {
       console.error("讀取薪資紀錄失敗", orderError);
     }
 
-    const formattedStaff: Staff[] = (staffData || []).map((item) => ({
-      id: item.discord_id,
-      name: item.name || item.discord_id,
-      staffType: "陪陪人員",
-      rank: "新手",
-      paymentMethod: "未設定",
-      game: item.game || "",
-      status: item.status || "offline",
-      totalOrders: item.total_orders || 0,
-      allowedServices: Array.isArray(item.allowed_services)
-        ? item.allowed_services.join("、")
-        : item.allowed_services || "",
-      onlineStartedAt: item.online_started_at || null,
-    }));
+    if (staffError || !staffData) {
+      setNotStaff(true);
+      setLoading(false);
+      return;
+    }
+    const formattedStaff: Staff[] = [
+      {
+        id: staffData.discord_id,
+        name: staffData.name || staffData.discord_id,
+        staffType: "陪陪人員",
+        rank: "新手",
+        paymentMethod: "未設定",
+        game: staffData.game || "",
+        status: staffData.status || "offline",
+        totalOrders: staffData.total_orders || 0,
+        allowedServices: Array.isArray(staffData.allowed_services)
+          ? staffData.allowed_services.join("、")
+          : staffData.allowed_services || "",
+        onlineStartedAt: staffData.online_started_at || null,
+      },
+    ];
 
     const formattedOrders: Order[] = (orderData || []).map((item) => ({
       id: item.id,
@@ -163,7 +182,25 @@ export default function StaffCenterPage() {
   }
 
   useEffect(() => {
-    loadData();
+    async function checkLogin() {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        window.location.href = "/login";
+        return;
+      }
+      const discordId = getDiscordId(data.user);
+      console.log("Discord user:", data.user);
+      console.log("Discord ID:", discordId);
+      if (!discordId) {
+        setNotStaff(true);
+        setLoading(false);
+        setAuthChecked(true);
+        return;
+      }
+      await loadData(discordId);
+      setAuthChecked(true);
+    }
+    checkLogin();
   }, []);
 
   const selectedStaff = staffList.find((staff) => staff.id === selectedStaffId);
@@ -228,7 +265,6 @@ export default function StaffCenterPage() {
       )
     );
   }
-
   function copySalarySlip() {
     const text = `
 深夜不關燈 員工薪資單
@@ -249,6 +285,11 @@ export default function StaffCenterPage() {
     alert("薪資單已複製");
   }
 
+  async function logout() {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }
+  
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-950 text-white">
@@ -269,23 +310,15 @@ export default function StaffCenterPage() {
           <p className="mt-2 text-sm text-zinc-400">
             查看自己的訂單、薪資、接單狀態與個人資料。
           </p>
+          <button
+            onClick={logout}
+            className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+            >
+              <LogOut size={16} />
+              登出
+            </button>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <label className="block text-sm text-zinc-400">
-              測試選擇員工
-              <select
-                value={selectedStaffId}
-                onChange={(e) => setSelectedStaffId(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-white"
-              >
-                {staffList.map((staff) => (
-                  <option key={staff.id} value={staff.id}>
-                    {staff.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
+          <div className="mt-5 grid gap-3 md:grid-cols-1">
             <label className="block text-sm text-zinc-400">
               查詢月份
               <input

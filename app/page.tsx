@@ -100,12 +100,24 @@ function calculateSalary(order: Order, staff?: Staff) {
     ruleName: "九月後正式薪資制度",
   };
 }
-
+function getDiscordId(user: any) {
+  return (
+    user?.user_metadata?.provider_id ||
+    user?.user_metadata?.sub ||
+    user?.identities?.find((identity: any) => identity.provider === "discord")
+      ?.identity_data?.sub ||
+    user?.identities?.find((identity: any) => identity.provider === "discord")
+      ?.id ||
+    ""
+  );
+}
 export default function Home() {
   const [activePage, setActivePage] = useState<"dashboard" | "staff" | "orders" | "payslip">("dashboard");
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
+  const [notAdmin, setNotAdmin] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState("2026-05");
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [staffForm, setStaffForm] = useState({
@@ -124,6 +136,41 @@ export default function Home() {
     amount: "",
     paid: false,
   });
+  async function checkAdmin() {
+    setCheckingAdmin(true);
+
+    const { data } = await supabase.auth.getUser();
+
+    if (!data.user) {
+      window.location.href = "/admin-login";
+      return;
+    }
+
+    const discordId = getDiscordId(data.user);
+
+    if (!discordId) {
+      setNotAdmin(true);
+      setCheckingAdmin(false);
+      return;
+    }
+
+    const { data: adminData, error } = await supabase
+      .from("admins")
+      .select("*")
+      .eq("discord_id", discordId)
+      .eq("enabled", true)
+      .single();
+
+    if (error || !adminData) {
+      setNotAdmin(true);
+      setCheckingAdmin(false);
+      return;
+    }
+
+    setNotAdmin(false);
+    setCheckingAdmin(false);
+    await loadData();
+  }
   async function loadData() {
     setLoading(true);
     const { data: staffData, error: staffError } = await supabase
@@ -169,7 +216,7 @@ export default function Home() {
     setLoading(false);
   }
   useEffect(() => {
-    loadData();
+    checkAdmin();
   }, []);
   const staffMap = useMemo(() => {
     return Object.fromEntries(staffList.map((staff) => [staff.id, staff]));
@@ -306,6 +353,39 @@ export default function Home() {
 
   navigator.clipboard.writeText(text);
     alert("薪資單已複製");
+  }
+  if (checkingAdmin) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-zinc-950 text-white">
+        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-8 text-center">
+          <p className="text-xl font-bold">正在驗證後台權限...</p>
+          <p className="mt-2 text-sm text-zinc-400">請稍候</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (notAdmin) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-900 p-8 text-center">
+          <p className="text-sm text-rose-300">無法進入後台</p>
+          <h1 className="mt-2 text-2xl font-bold">你沒有管理員權限</h1>
+          <p className="mt-3 text-sm text-zinc-400">
+            只有老闆或管理員可以查看薪資後台。
+          </p>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              window.location.href = "/login";
+            }}
+            className="mt-6 w-full rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
+          >
+            重新登入
+          </button>
+        </div>
+      </main>
+    );
   }
   if (loading) {
     return (

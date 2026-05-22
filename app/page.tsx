@@ -180,12 +180,12 @@ export default function Home() {
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
-      .order("date", { ascending: false });
+     
     if (staffError) {
       console.error("讀取員工失敗", staffError);
     }
     if (orderError) {
-      console.error("讀取訂單失敗", orderError);
+      console.error("讀取訂單失敗", JSON.stringify(orderError, null, 2));
     }
     const formattedStaff: Staff[] = (staffData || []).map((item) => ({
       id: item.discord_id,

@@ -596,8 +596,8 @@ export default function StaffCenterPage() {
             
             <Card title="說明">
               <div className="space-y-2 text-sm text-zinc-300">
-                <p>目前員工中心為測試版，先用下拉選單切換員工。</p>
-                <p>之後會改成 Discord 登入，員工只能看到自己的資料。</p>
+                <p>常用銀行代碼：中信822台新812國泰013玉山808</p>
+                <p>戶名為自己名字-為保實名轉帳-中間字可隱藏-EX：王O明</p>
               </div>
             </Card>
           </section>

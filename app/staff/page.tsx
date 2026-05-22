@@ -164,7 +164,7 @@ export default function StaffCenterPage() {
         id: staffData.discord_id,
         name: staffData.name || staffData.discord_id,
         staffType: staffData.staff_type || "陪陪人員",
-        rank: "新手",
+        rank: (staffData.rank || "新手") as Rank,
         paymentMethod: "未設定",
         game: staffData.game || "",
         status: staffData.status || "offline",

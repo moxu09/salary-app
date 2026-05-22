@@ -144,7 +144,7 @@ export default function Home() {
       id: item.discord_id,
       name: item.name || item.discord_id,
       staffType: item.staff_type || "陪陪人員",
-      rank: "新手",
+      rank: item.rank || "新手",
       paymentMethod: "未設定",
     }));
     const formattedOrders: Order[] = (orderData || []).map((item) => ({

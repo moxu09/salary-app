@@ -34,8 +34,9 @@ function money(value: number) {
   return `NT$ ${value.toLocaleString("zh-TW")}`;
 }
 
-function getMonth(date: string) {
-  return date.slice(0, 7);
+function getMonth(date?: string | null) {
+  if (!date) return "";
+  return String(date).slice(0, 7);
 }
 
 function calculateSalary(order: Order, staff?: Staff) {
@@ -120,6 +121,11 @@ export default function Home() {
   const [notAdmin, setNotAdmin] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState("2026-05");
   const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [payForm, setPayForm] = useState({
+    staffId: "",
+    startDate: "2026-05-01",
+    endDate: "2026-05-31",
+  });
   const [staffForm, setStaffForm] = useState({
     name: "",
     staffType: "陪陪人員" as StaffType,
@@ -194,20 +200,30 @@ export default function Home() {
       rank: item.rank || "新手",
       paymentMethod: item.payment_method || "未設定",
     }));
-    const formattedOrders: Order[] = (orderData || []).map((item) => ({
-      id: item.id,
-      date: item.date,
-      staffId: item.staff_id,
-      customer: item.customer,
-      orderType: item.order_type,
-      item: item.item,
-      amount: item.amount,
-      paid: item.paid,
-    }));
+    const formattedOrders: Order[] = (orderData || [])
+      .filter((item) => item.assigned_player)
+      .map((item) => ({
+        id: item.id,
+        date:
+          item.completed_at?.slice(0, 10) ||
+          item.accepted_at?.slice(0, 10) ||
+          item.created_at?.slice(0, 10) ||
+          "",
+        staffId: item.assigned_player,
+        customer: item.customer_id || "未填寫",
+        orderType: "訂單",
+        item: `${item.game || ""}：${item.service || "未填寫"}`,
+        amount: Number(item.final_price || item.price || 0),
+        paid: Boolean(item.paid),
+      }));
     setStaffList(formattedStaff);
     setOrders(formattedOrders);
     if (formattedStaff.length > 0) {
       setSelectedStaffId(formattedStaff[0].id);
+      setPayForm((prev) => ({
+        ...prev,
+        staffId: formattedStaff[0].id,
+      }));
       setOrderForm((prev) => ({
         ...prev,
         staffId: formattedStaff[0].id,
@@ -345,14 +361,55 @@ export default function Home() {
 薪資實拿：${money(payslip.salaryAmount)}
 公司收入：${money(payslip.companyAmount)}
 
-已發放：${money(payslip.paidAmount)}
-待發放：${money(payslip.unpaidAmount)}
+已付款：${money(payslip.paidAmount)}
+待付款：${money(payslip.unpaidAmount)}
 
 深夜不關燈 管理系統
       `.trim();
 
   navigator.clipboard.writeText(text);
     alert("薪資單已複製");
+  }
+  async function markSalaryPaid() {
+    if (!payForm.staffId) {
+      alert("請選擇人員");
+      return;
+    }
+    if (!payForm.startDate || !payForm.endDate) {
+      alert("請選擇發薪時間段");
+      return;
+    }
+    const confirmText = `確定要把這位人員在 ${payForm.startDate} 到 ${payForm.endDate} 的薪資標記為已付款嗎？`;
+    if (!confirm(confirmText)) return;
+    const { error } = await supabase
+      .from("play_orders")
+      .update({
+        paid: true,
+        paid_at: new Date().toISOString(),
+      })
+      .eq("assigned_player", payForm.staffId)
+      .gte("created_at", `${payForm.startDate}T00:00:00`)
+      .lte("created_at", `${payForm.endDate}T23:59:59`);
+    if (error) {
+      alert("標記已付款失敗");
+      console.error(error);
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((order) => {
+        const inRange =
+          order.staffId === payForm.staffId &&
+          order.date >= payForm.startDate &&
+          order.date <= payForm.endDate;
+        return inRange
+          ? {
+              ...order,
+              paid: true,
+            }
+          : order;
+      })
+    );
+    alert("已標記為已付款");
   }
   if (checkingAdmin) {
     return (
@@ -435,7 +492,7 @@ export default function Home() {
               <Stat title="本月總金額" value={money(dashboard.totalAmount)} />
               <Stat title="應發薪資" value={money(dashboard.totalSalary)} />
               <Stat title="公司收入" value={money(dashboard.totalCompany)} />
-              <Stat title="待發放" value={money(dashboard.unpaidSalary)} danger />
+              <Stat title="未付款" value={money(dashboard.unpaidSalary)} danger />
               <Stat title="訂單數" value={`${dashboard.orderCount} 筆`} />
             </div>
 
@@ -545,7 +602,7 @@ export default function Home() {
                     checked={orderForm.paid}
                     onChange={(e) => setOrderForm({ ...orderForm, paid: e.target.checked })}
                   />
-                  已發放薪資
+                  已付款
                 </label>
 
                 <button onClick={addOrder} className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600">
@@ -563,6 +620,49 @@ export default function Home() {
 
         {activePage === "payslip" && (
           <section className="grid gap-6 md:grid-cols-[360px_1fr]">
+            <Card title="批次發薪">
+              <div className="space-y-4">
+                <label className="block text-sm text-zinc-400">
+                  選擇發薪人員
+                  <select
+                    value={payForm.staffId}
+                    onChange={(e) => setPayForm({ ...payForm, staffId: e.target.value })}
+                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-white"
+                  >
+                    {staffList.map((staff) => (
+                      <option key={staff.id} value={staff.id}>
+                        {staff.name}｜{staff.staffType}｜{staff.rank}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <Input
+                  type="date"
+                  label="開始日期"
+                  value={payForm.startDate}
+                  onChange={(value) => setPayForm({ ...payForm, startDate: value })}
+                />
+
+                <Input
+                  type="date"
+                  label="結束日期"
+                  value={payForm.endDate}
+                  onChange={(value) => setPayForm({ ...payForm, endDate: value })}
+                />
+
+                <button
+                  onClick={markSalaryPaid}
+                  className="w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold hover:bg-emerald-600"
+                >
+                  標記這段時間已付款
+                </button>
+
+                <p className="text-xs text-zinc-500">
+                  會把此人員在指定日期內的訂單標記為已付款，並寫入付款時間。
+                </p>
+              </div>
+            </Card>
             <Card title="產生薪資單">
               <div className="space-y-4">
                 <label className="block text-sm text-zinc-400">
@@ -606,8 +706,8 @@ export default function Home() {
                   <Stat title="總金額" value={money(payslip.totalAmount)} />
                   <Stat title="薪資實拿" value={money(payslip.salaryAmount)} />
                   <Stat title="公司收入" value={money(payslip.companyAmount)} />
-                  <Stat title="已發放" value={money(payslip.paidAmount)} />
-                  <Stat title="待發放" value={money(payslip.unpaidAmount)} danger />
+                  <Stat title="已付款" value={money(payslip.paidAmount)} />
+                  <Stat title="待付款" value={money(payslip.unpaidAmount)} danger />
                   <Stat title="筆數" value={`${payslipOrders.length} 筆`} />
                 </div>
 
@@ -619,8 +719,7 @@ export default function Home() {
       </div>
     </main>
   );
-}
-
+ }
 function TabButton({
   active,
   onClick,
@@ -767,7 +866,7 @@ function OrderTable({ orders }: { orders: any[] }) {
                 order.paid ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
               }`}
             >
-              {order.paid ? "已發放" : "待發放"}
+              {order.paid ? "已付款" : "未付款"}
             </span>
           </div>
 

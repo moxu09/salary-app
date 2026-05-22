@@ -761,7 +761,7 @@ function OrderTable({ orders }: { orders: any[] }) {
                 order.paid ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
               }`}
             >
-              {order.paid ? "已發放" : "待發放"}
+              {order.paid ? "已付款" : "未付款"}
             </span>
           </div>
 

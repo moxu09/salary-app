@@ -145,7 +145,7 @@ export default function Home() {
       name: item.name || item.discord_id,
       staffType: item.staff_type || "陪陪人員",
       rank: item.rank || "新手",
-      paymentMethod: "未設定",
+      paymentMethod: item.payment_method || "未設定",
     }));
     const formattedOrders: Order[] = (orderData || []).map((item) => ({
       id: item.id,

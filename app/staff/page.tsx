@@ -22,6 +22,10 @@ type Staff = {
   staffType: StaffType;
   rank: Rank;
   paymentMethod: string;
+  bankName?: string;
+  bankCode?: string;
+  bankAccount?: string;
+  bankHolder?: string;
   game?: string;
   status?: string;
   totalOrders?: number;
@@ -132,6 +136,12 @@ export default function StaffCenterPage() {
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const [notStaff, setNotStaff] = useState(false);    
+  const [bankForm, setBankForm] = useState({
+    bankName: "",
+    bankCode: "",
+    bankAccount: "",
+    bankHolder: "",
+  });
   async function loadData(discordId: string) {
     setLoading(true);
 
@@ -166,6 +176,10 @@ export default function StaffCenterPage() {
         staffType: staffData.staff_type || "陪陪人員",
         rank: (staffData.rank || "新手") as Rank,
         paymentMethod: staffData.payment_method || "未設定",
+        bankName: staffData.bank_name || "",
+        bankCode: staffData.bank_code || "",
+        bankAccount: staffData.bank_account || "",
+        bankHolder: staffData.bank_holder || "",
         game: staffData.game || "",
         status: staffData.status || "offline",
         totalOrders: staffData.total_orders || 0,
@@ -189,6 +203,12 @@ export default function StaffCenterPage() {
 
     setStaffList(formattedStaff);
     setOrders(formattedOrders);
+    setBankForm({
+      bankName: staffData.bank_name || "",
+      bankCode: staffData.bank_code || "",
+      bankAccount: staffData.bank_account || "",
+      bankHolder: staffData.bank_holder || "",
+    });
 
     if (formattedStaff.length > 0) {
       setSelectedStaffId(formattedStaff[0].id);
@@ -301,6 +321,43 @@ export default function StaffCenterPage() {
     alert("薪資單已複製");
   }
 
+  async function saveBankInfo() {
+    if (!selectedStaff) return;
+
+    const { error } = await supabase
+      .from("players")
+      .update({
+        bank_name: bankForm.bankName.trim(),
+        bank_code: bankForm.bankCode.trim(),
+        bank_account: bankForm.bankAccount.trim(),
+        bank_holder: bankForm.bankHolder.trim(),
+        payment_method: `${bankForm.bankName.trim()} ${bankForm.bankCode.trim()} / ${bankForm.bankAccount.trim()} / ${bankForm.bankHolder.trim()}`,
+      })
+      .eq("discord_id", selectedStaff.id);
+
+    if (error) {
+      alert("儲存收款資料失敗");
+      console.error(error);
+      return;
+    }
+
+    setStaffList((prev) =>
+      prev.map((staff) =>
+        staff.id === selectedStaff.id
+          ? {
+              ...staff,
+              paymentMethod: `${bankForm.bankName.trim()} ${bankForm.bankCode.trim()} / ${bankForm.bankAccount.trim()} / ${bankForm.bankHolder.trim()}`,
+              bankName: bankForm.bankName.trim(),
+              bankCode: bankForm.bankCode.trim(),
+              bankAccount: bankForm.bankAccount.trim(),
+              bankHolder: bankForm.bankHolder.trim(),
+            }
+          : staff
+      )
+    );
+
+    alert("收款資料已儲存");
+  }
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -486,9 +543,57 @@ export default function StaffCenterPage() {
                 <Info label="狀態" value={selectedStaff?.status || "-"} />
                 <Info label="累積接單" value={`${selectedStaff?.totalOrders || 0} 筆`} />
                 <Info label="可服務項目" value={selectedStaff?.allowedServices || "-"} />
+                <Info label="收款方式" value={selectedStaff?.paymentMethod || "未設定"} />
               </div>
             </Card>
+            <Card title="收款資料">
+              <div className="space-y-4">
+               <div className="grid gap-4 md:grid-cols-2">
+                  <Input
+                    label="銀行名稱"
+                    value={bankForm.bankName}
+                    onChange={(value) => setBankForm({ ...bankForm, bankName: value })}
+                    placeholder="例如：台新銀行"
+                  />
 
+                  <Input
+                    label="銀行代碼"
+                    value={bankForm.bankCode}
+                    onChange={(value) => setBankForm({ ...bankForm, bankCode: value })}
+                    placeholder="例如：812"
+                  />
+
+                  <Input
+                    label="銀行帳號"
+                    value={bankForm.bankAccount}
+                    onChange={(value) => setBankForm({ ...bankForm, bankAccount: value })}
+                    placeholder="請輸入銀行帳號"
+                  />
+
+                  <Input
+                    label="戶名"
+                    value={bankForm.bankHolder}
+                    onChange={(value) => setBankForm({ ...bankForm, bankHolder: value })}
+                    placeholder="請輸入戶名"
+                  />
+                </div>
+
+                <button
+                  onClick={saveBankInfo}
+                  className="w-full rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
+                >
+                  儲存收款資料
+                </button>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+                  目前收款方式：
+                  <span className="ml-1 text-zinc-100">
+                    {selectedStaff?.paymentMethod || "未設定"}
+                  </span>
+                </div>
+              </div>
+            </Card>
+            
             <Card title="說明">
               <div className="space-y-2 text-sm text-zinc-300">
                 <p>目前員工中心為測試版，先用下拉選單切換員工。</p>
@@ -589,6 +694,30 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-zinc-500">{label}</p>
       <p className="mt-1 break-words font-semibold">{value}</p>
     </div>
+  );
+}
+
+function Input({
+  label,
+  value,
+  onChange,
+  placeholder = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block text-sm text-zinc-400">
+      {label}
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-violet-400"
+      />
+    </label>
   );
 }
 

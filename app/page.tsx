@@ -377,7 +377,7 @@ export default function Home() {
           <button
             onClick={async () => {
               await supabase.auth.signOut();
-              window.location.href = "/login";
+              window.location.href = "/admin-login";
             }}
             className="mt-6 w-full rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
           >

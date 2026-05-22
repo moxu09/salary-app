@@ -152,7 +152,7 @@ export default function StaffCenterPage() {
       .single();
 
     const { data: orderData, error: orderError } = await supabase
-      .from("salary_orders")
+      .from("play_orders")
       .select("*")
       .order("date", { ascending: false });
 

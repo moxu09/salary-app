@@ -395,7 +395,7 @@ export default function Home() {
           <p className="mt-2 text-sm text-zinc-400">正在連線 Supabase</p>
         </div>
       </main>
-    );
+    ); 
   }
   return (
     <main className="min-h-screen bg-zinc-950 text-white">

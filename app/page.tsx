@@ -24,7 +24,8 @@ type Order = {
   orderType: OrderType;
   item: string;
   amount: number;
-  paid: boolean;
+  paid: boolean;        // 客人是否付款
+  salaryPaid: boolean;  // 員工是否已發薪
 };
 
 const OPENING_END_DATE = "2026-09-01";
@@ -221,6 +222,7 @@ export default function Home() {
         item: `${item.game || ""}：${item.service || "未填寫"}`,
         amount: Number(item.final_price || item.price || 0),
         paid: Boolean(item.paid),
+        salaryPaid: Boolean(item.salary_paid),
       }));
     setStaffList(formattedStaff);
     setOrders(formattedOrders);
@@ -262,7 +264,7 @@ export default function Home() {
     totalAmount: monthOrders.reduce((sum, order) => sum + order.amount, 0),
     totalSalary: monthOrders.reduce((sum, order) => sum + order.salaryAmount, 0),
     totalCompany: monthOrders.reduce((sum, order) => sum + order.companyAmount, 0),
-    unpaidSalary: monthOrders.filter((order) => !order.paid).reduce((sum, order) => sum + order.salaryAmount, 0),
+    unpaidSalary: monthOrders.filter((order) => !order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0),
     orderCount: monthOrders.length,
   };
 
@@ -274,8 +276,8 @@ export default function Home() {
     totalAmount: payslipOrders.reduce((sum, order) => sum + order.amount, 0),
     salaryAmount: payslipOrders.reduce((sum, order) => sum + order.salaryAmount, 0),
     companyAmount: payslipOrders.reduce((sum, order) => sum + order.companyAmount, 0),
-    paidAmount: payslipOrders.filter((order) => order.paid).reduce((sum, order) => sum + order.salaryAmount, 0),
-    unpaidAmount: payslipOrders.filter((order) => !order.paid).reduce((sum, order) => sum + order.salaryAmount, 0),
+    paidAmount: payslipOrders.filter((order) => order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0),
+    unpaidAmount: payslipOrders.filter((order) => !order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0),
   };
 
   async function addStaff() {
@@ -379,6 +381,7 @@ export default function Home() {
           : data.service,
       amount: Number(data.final_price || data.price || amount),
       paid: Boolean(data.paid),
+      salaryPaid: Boolean(data.salary_paid),
     };
     setOrders([...orders, newOrder]);
     setOrderForm({
@@ -442,12 +445,12 @@ export default function Home() {
     const { error } = await supabase
       .from("play_orders")
       .update({
-        paid: true,
-        paid_at: new Date().toISOString(),
+        salary_paid: true,
+        salary_paid_at: new Date().toISOString(),
       })
       .eq("assigned_player", payForm.staffId)
-      .gte("created_at", `${payForm.startDate}T00:00:00`)
-      .lte("created_at", `${payForm.endDate}T23:59:59`);
+      .gte("completed_at", `${payForm.startDate}T00:00:00`)
+      .lte("completed_at", `${payForm.endDate}T23:59:59`);
     if (error) {
       alert("標記已付款失敗");
       console.error(error);
@@ -462,7 +465,7 @@ export default function Home() {
         return inRange
           ? {
               ...order,
-              paid: true,
+              salaryPaid: true,
             }
           : order;
       })
@@ -909,7 +912,7 @@ function OrderTable({
         <div>客人</div>
         <div className="col-span-2">項目</div>
         <div>實拿</div>
-        <div>狀態</div>
+        <div>付款 / 發薪</div>
       </div>
 
       {orders.map((order) => (
@@ -927,13 +930,24 @@ function OrderTable({
           <div className="text-zinc-300">{order.customer}</div>
           <div className="col-span-2 text-zinc-400">{order.item}</div>
           <div className="font-bold text-violet-200">{money(order.salaryAmount)}</div>
-          <div>
+          <div className="flex flex-col gap-1">
             <span
-              className={`rounded-full px-2 py-1 text-xs ${
-                order.paid ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+              className={`w-fit rounded-full px-2 py-1 text-xs ${
+                order.paid
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "bg-rose-500/20 text-rose-300"
               }`}
             >
-              {order.paid ? "已付款" : "未付款"}
+              客人：{order.paid ? "已付款" : "未付款"}
+            </span>
+            <span
+              className={`w-fit rounded-full px-2 py-1 text-xs ${
+                order.salaryPaid
+                  ? "bg-sky-500/20 text-sky-300"
+                  : "bg-amber-500/20 text-amber-300"
+              }`}
+            >
+              員工：{order.salaryPaid ? "已發薪" : "未發薪"}
             </span>
           </div>
 

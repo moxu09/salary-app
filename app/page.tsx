@@ -210,7 +210,13 @@ export default function Home() {
           item.created_at?.slice(0, 10) ||
           "",
         staffId: item.assigned_player,
-        customer: item.customer_id || "未填寫",
+        customer:
+          item.customer_name ||
+          item.customer_username ||
+          item.username ||
+          item.nickname ||
+          item.customer_id ||
+          "未填寫",
         orderType: "訂單",
         item: `${item.game || ""}：${item.service || "未填寫"}`,
         amount: Number(item.final_price || item.price || 0),

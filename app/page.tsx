@@ -338,6 +338,7 @@ export default function Home() {
       .insert({
         order_no: `MANUAL-${Date.now()}`,
         customer_id: orderForm.customer.trim(),
+        customer_username: orderForm.customer.trim(),
         channel_id: `manual-${Date.now()}`,
         assigned_player: orderForm.staffId,
         service:

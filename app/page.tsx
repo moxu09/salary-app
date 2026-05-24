@@ -336,7 +336,6 @@ export default function Home() {
       .insert({
         order_no: `MANUAL-${Date.now()}`,
         customer_id: orderForm.customer.trim(),
-        customer_name: orderForm.customer.trim(),
         channel_id: `manual-${Date.now()}`,
         assigned_player: orderForm.staffId,
         service:
@@ -371,7 +370,6 @@ export default function Home() {
         orderForm.date,
       staffId: data.assigned_player,
       customer:
-        data.customer_name ||
         data.customer_id ||
         orderForm.customer.trim(),
       orderType: orderForm.orderType,

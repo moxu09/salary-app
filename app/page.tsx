@@ -390,6 +390,21 @@ export default function Home() {
     });
     alert("新增成功");
   }
+  async function deleteOrder(orderId: number) {
+    const ok = confirm("確定要刪除這筆訂單 / 打賞紀錄嗎？刪除後無法復原。");
+    if (!ok) return;
+    const { error } = await supabase
+      .from("play_orders")
+      .delete()
+      .eq("id", orderId);
+    if (error) {
+      console.error("刪除訂單失敗", error);
+      alert(error.message || "刪除訂單失敗");
+      return;
+    }
+    setOrders((prev) => prev.filter((order) => order.id !== orderId));
+    alert("已刪除訂單");
+  }
   function copyPayslip() {
     const text = `
 深夜不關燈 薪資單
@@ -656,7 +671,10 @@ export default function Home() {
             </Card>
 
             <Card title="訂單紀錄">
-              <OrderTable orders={enrichedOrders.slice().reverse()} />
+              <OrderTable
+                orders={enrichedOrders.slice().reverse()}
+                onDeleteOrder={deleteOrder}
+              />
             </Card>
           </section>
         )}
@@ -867,7 +885,13 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function OrderTable({ orders }: { orders: any[] }) {
+function OrderTable({
+  orders,
+  onDeleteOrder,
+}: {
+  orders: any[];
+  onDeleteOrder?: (orderId: number) => void;
+}) {
   if (!orders.length) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-700 p-8 text-center text-sm text-zinc-500">
@@ -913,8 +937,19 @@ function OrderTable({ orders }: { orders: any[] }) {
             </span>
           </div>
 
-          <div className="md:col-span-8 text-xs text-zinc-500">
-            {order.ruleName}｜人員 {order.salaryRate}%｜公司 {order.companyRate}%
+          <div className="md:col-span-8 flex flex-col gap-2 text-xs text-zinc-500 md:flex-row md:items-center md:justify-between">
+            <span>
+              {order.ruleName}｜人員 {order.salaryRate}%｜公司 {order.companyRate}%
+            </span>
+            {onDeleteOrder && (
+              <button
+                type="button"
+                onClick={() => onDeleteOrder(order.id)}
+                className="w-fit rounded-lg bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/30"
+              >
+                刪除
+              </button>
+            )}
           </div>
         </div>
       ))}

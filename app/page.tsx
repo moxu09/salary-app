@@ -351,6 +351,8 @@ export default function Home() {
         payment_method: "手動新增",
         paid: orderForm.paid,
         paid_at: orderForm.paid ? now : null,
+        salary_paid: false,
+        salary_paid_at: null,
         status: "completed",
         completed_at: `${orderForm.date}T12:00:00.000Z`,
         accepted_at: `${orderForm.date}T12:00:00.000Z`,
@@ -408,6 +410,32 @@ export default function Home() {
     setOrders((prev) => prev.filter((order) => order.id !== orderId));
     alert("已刪除訂單");
   }
+  async function toggleCustomerPaid(orderId: number, currentPaid: boolean) {
+    const nextPaid = !currentPaid;
+    const { error } = await supabase
+      .from("play_orders")
+      .update({
+        paid: nextPaid,
+        paid_at: nextPaid ? new Date().toISOString() : null,
+      })
+      .eq("id", orderId);
+    if (error) {
+      console.error("更新客人付款狀態失敗", error);
+      alert(error.message || "更新客人付款狀態失敗");
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              paid: nextPaid,
+            }
+          : order
+      )
+    );
+    alert(nextPaid ? "已標記客人已付款" : "已標記客人未付款");
+  }
   function copyPayslip() {
     const text = `
 深夜不關燈 薪資單
@@ -422,8 +450,8 @@ export default function Home() {
 薪資實拿：${money(payslip.salaryAmount)}
 公司收入：${money(payslip.companyAmount)}
 
-已付款：${money(payslip.paidAmount)}
-待付款：${money(payslip.unpaidAmount)}
+已發薪：${money(payslip.paidAmount)}
+未發薪：${money(payslip.unpaidAmount)}
 
 深夜不關燈 管理系統
       `.trim();
@@ -677,6 +705,7 @@ export default function Home() {
               <OrderTable
                 orders={enrichedOrders.slice().reverse()}
                 onDeleteOrder={deleteOrder}
+                onToggleCustomerPaid={toggleCustomerPaid}
               />
             </Card>
           </section>
@@ -770,8 +799,8 @@ export default function Home() {
                   <Stat title="總金額" value={money(payslip.totalAmount)} />
                   <Stat title="薪資實拿" value={money(payslip.salaryAmount)} />
                   <Stat title="公司收入" value={money(payslip.companyAmount)} />
-                  <Stat title="已付款" value={money(payslip.paidAmount)} />
-                  <Stat title="待付款" value={money(payslip.unpaidAmount)} danger />
+                  <Stat title="已發薪" value={money(payslip.paidAmount)} />
+                  <Stat title="未發薪" value={money(payslip.unpaidAmount)} danger />
                   <Stat title="筆數" value={`${payslipOrders.length} 筆`} />
                 </div>
 
@@ -891,9 +920,11 @@ function Info({ label, value }: { label: string; value: string }) {
 function OrderTable({
   orders,
   onDeleteOrder,
+  onToggleCustomerPaid,
 }: {
   orders: any[];
   onDeleteOrder?: (orderId: number) => void;
+  onToggleCustomerPaid?: (orderId: number, currentPaid: boolean) => void;
 }) {
   if (!orders.length) {
     return (
@@ -955,15 +986,26 @@ function OrderTable({
             <span>
               {order.ruleName}｜人員 {order.salaryRate}%｜公司 {order.companyRate}%
             </span>
-            {onDeleteOrder && (
-              <button
-                type="button"
-                onClick={() => onDeleteOrder(order.id)}
-                className="w-fit rounded-lg bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/30"
-              >
-                刪除
-              </button>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {onToggleCustomerPaid && (
+                <button
+                  type="button"
+                  onClick={() => onToggleCustomerPaid(order.id, order.paid)}
+                  className="w-fit rounded-lg bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
+                >
+                  {order.paid ? "改為客人未付款" : "改為客人已付款"}
+                </button>
+              )}
+              {onDeleteOrder && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteOrder(order.id)}
+                  className="w-fit rounded-lg bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/30"
+                >
+                  刪除
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ))}

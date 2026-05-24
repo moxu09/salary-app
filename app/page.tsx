@@ -313,36 +313,74 @@ export default function Home() {
   }
 
   async function addOrder() {
-    if (!orderForm.customer.trim()) return;
-    if (!orderForm.item.trim()) return;
-    if (!Number(orderForm.amount)) return;
+    if (!orderForm.staffId) {
+      alert("請選擇人員");
+      return;
+    }
+    if (!orderForm.customer.trim()) {
+      alert("請輸入客人名稱");
+      return;
+    }
+    if (!orderForm.item.trim()) {
+      alert("請輸入項目");
+      return;
+    }
+    const amount = Number(orderForm.amount);
+    if (!amount || amount <= 0) {
+      alert("請輸入正確金額");
+      return;
+    }
+    const now = new Date().toISOString();
     const { data, error } = await supabase
       .from("play_orders")
       .insert({
-        date: orderForm.date,
-        staff_id: orderForm.staffId,
-        customer: orderForm.customer.trim(),
-        order_type: orderForm.orderType,
-        item: orderForm.item.trim(),
-        amount: Number(orderForm.amount),
+        order_no: `MANUAL-${Date.now()}`,
+        customer_id: orderForm.customer.trim(),
+        customer_name: orderForm.customer.trim(),
+        channel_id: `manual-${Date.now()}`,
+        assigned_player: orderForm.staffId,
+        service:
+          orderForm.orderType === "打賞"
+            ? `打賞：${orderForm.item.trim()}`
+            : orderForm.item.trim(),
+        price: amount,
+        final_price: amount,
+        discount_rate: 1,
+        discount_amount: 0,
+        payment_method: "手動新增",
         paid: orderForm.paid,
+        paid_at: orderForm.paid ? now : null,
+        status: "completed",
+        completed_at: `${orderForm.date}T12:00:00.000Z`,
+        accepted_at: `${orderForm.date}T12:00:00.000Z`,
+        note: orderForm.orderType,
       })
       .select()
       .single();
     if (error) {
-      alert("新增訂單失敗");
-      console.error(error);
+      console.error("新增訂單失敗", error);
+      alert(error.message || "新增訂單失敗");
       return;
     }
     const newOrder: Order = {
       id: data.id,
-      date: data.date,
-      staffId: data.staff_id,
-      customer: data.customer,
-      orderType: data.order_type,
-      item: data.item,
-      amount: data.amount,
-      paid: data.paid,
+      date:
+        data.completed_at?.slice(0, 10) ||
+        data.accepted_at?.slice(0, 10) ||
+        data.created_at?.slice(0, 10) ||
+        orderForm.date,
+      staffId: data.assigned_player,
+      customer:
+        data.customer_name ||
+        data.customer_id ||
+        orderForm.customer.trim(),
+      orderType: orderForm.orderType,
+      item:
+        orderForm.orderType === "打賞"
+          ? `打賞：${orderForm.item.trim()}`
+          : data.service,
+      amount: Number(data.final_price || data.price || amount),
+      paid: Boolean(data.paid),
     };
     setOrders([...orders, newOrder]);
     setOrderForm({
@@ -352,6 +390,7 @@ export default function Home() {
       amount: "",
       paid: false,
     });
+    alert("新增成功");
   }
   function copyPayslip() {
     const text = `

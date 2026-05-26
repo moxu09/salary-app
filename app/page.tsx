@@ -512,6 +512,18 @@ export default function Home() {
       unitAmount = 100;
       totalAmount = unitAmount * finalCount;
     }
+    if (extraPayForm.roleType === "獎金") {
+        baseAmount = amount;
+        unitAmount = 0;
+        finalCount = 0;
+        totalAmount = baseAmount;
+      }
+    if (extraPayForm.roleType === "其他") {
+        baseAmount = amount;
+        unitAmount = 0;
+        finalCount = 0;
+        totalAmount = baseAmount;
+      }
     if (totalAmount <= 0) {
       alert("金額或人數不可為 0");
       return;
@@ -925,16 +937,22 @@ export default function Home() {
                   onChange={(value) =>
                     setExtraPayForm({ ...extraPayForm, roleType: value })
                   }
-                options={["接待", "行銷", "技術審核官", "娛樂審核官"]}
+                  options={["接待", "行銷", "技術審核官", "娛樂審核官", "獎金", "其他"]}
                 />
-                {extraPayForm.roleType === "行銷" ? (
+                {["行銷", "獎金", "其他"].includes(extraPayForm.roleType) ? (
                   <Input
                     type="number"
-                    label="行銷月薪金額"
+                    label={
+                      extraPayForm.roleType === "行銷"
+                        ? "行銷月薪金額"
+                        : extraPayForm.roleType === "獎金"
+                          ? "獎金金額"
+                          : "其他金額"
+                    }
                     value={extraPayForm.amount}
                     onChange={(value) =>
                       setExtraPayForm({ ...extraPayForm, amount: value })
-                     }
+                    }
                   />
                 ) : (
                   <Input
@@ -950,7 +968,6 @@ export default function Home() {
                     }
                   />
                 )}
-
                 <Input
                   label="備註"
                   value={extraPayForm.note}

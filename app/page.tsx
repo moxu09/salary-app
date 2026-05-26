@@ -27,7 +27,18 @@ type Order = {
   paid: boolean;        // 客人是否付款
   salaryPaid: boolean;  // 員工是否已發薪
 };
-
+type ExtraPayment = {
+  id: number;
+  staffId: string;
+  month: string;
+  roleType: string;
+  baseAmount: number;
+  unitAmount: number;
+  count: number;
+  totalAmount: number;
+  note: string;
+  salaryPaid: boolean;
+};
 const OPENING_END_DATE = "2026-09-01";
 const MANAGER_START_DATE = "2026-05-01";
 
@@ -117,6 +128,7 @@ export default function Home() {
   const [activePage, setActivePage] = useState<"dashboard" | "staff" | "orders" | "payslip">("dashboard");
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [extraPayments, setExtraPayments] = useState<ExtraPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [notAdmin, setNotAdmin] = useState(false);
@@ -142,6 +154,14 @@ export default function Home() {
     item: "",
     amount: "",
     paid: false,
+  });
+  const [extraPayForm, setExtraPayForm] = useState({
+    staffId: "",
+    month: new Date().toISOString().slice(0, 7),
+    roleType: "接待",
+    count: "0",
+    amount: "300",
+    note: "",
   });
   async function checkAdmin() {
     setCheckingAdmin(true);
@@ -187,12 +207,18 @@ export default function Home() {
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
-     
+    const { data: extraData, error: extraError } = await supabase
+      .from("staff_extra_payments")
+      .select("*")
+      .order("created_at", { ascending: false }); 
     if (staffError) {
       console.error("讀取員工失敗", staffError);
     }
     if (orderError) {
       console.error("讀取訂單失敗", JSON.stringify(orderError, null, 2));
+    }
+    if (extraError) {
+      console.error("讀取其他職位薪資失敗", extraError);
     }
     const formattedStaff: Staff[] = (staffData || []).map((item) => ({
       id: item.discord_id,
@@ -218,14 +244,33 @@ export default function Home() {
           item.nickname ||
           item.customer_id ||
           "未填寫",
-        orderType: "訂單",
+        orderType:
+          String(item.service || "").startsWith("打賞：")
+            ? "打賞"
+            : "訂單",
         item: `${item.game || ""}：${item.service || "未填寫"}`,
         amount: Number(item.final_price || item.price || 0),
         paid: Boolean(item.paid),
         salaryPaid: Boolean(item.salary_paid),
       }));
+    const formattedExtraPayments: ExtraPayment[] = (extraData || []).map((item) => ({
+      id: item.id,
+      staffId: item.staff_id,
+      month: item.month,
+      roleType: item.role_type,
+      baseAmount: Number(item.base_amount || 0),
+      unitAmount: Number(item.unit_amount || 0),
+      count: Number(item.count || 0),
+      totalAmount: Number(
+        item.total_amount ??
+          ((item.base_amount || 0) + (item.unit_amount || 0) * (item.count || 0))
+      ),  
+      note: item.note || "",
+      salaryPaid: Boolean(item.salary_paid),
+    }));
     setStaffList(formattedStaff);
     setOrders(formattedOrders);
+    setExtraPayments(formattedExtraPayments);
     if (formattedStaff.length > 0) {
       setSelectedStaffId(formattedStaff[0].id);
       setPayForm((prev) => ({
@@ -233,6 +278,10 @@ export default function Home() {
         staffId: formattedStaff[0].id,
       }));
       setOrderForm((prev) => ({
+        ...prev,
+        staffId: formattedStaff[0].id,
+      }));
+      setExtraPayForm((prev) => ({
         ...prev,
         staffId: formattedStaff[0].id,
       }));
@@ -260,24 +309,59 @@ export default function Home() {
 
   const monthOrders = enrichedOrders.filter((order) => getMonth(order.date) === selectedMonth);
 
-  const dashboard = {
-    totalAmount: monthOrders.reduce((sum, order) => sum + order.amount, 0),
-    totalSalary: monthOrders.reduce((sum, order) => sum + order.salaryAmount, 0),
-    totalCompany: monthOrders.reduce((sum, order) => sum + order.companyAmount, 0),
-    unpaidSalary: monthOrders.filter((order) => !order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0),
-    orderCount: monthOrders.length,
-  };
-
   const selectedStaff = staffMap[selectedStaffId];
 
   const payslipOrders = monthOrders.filter((order) => order.staffId === selectedStaffId);
-
+  const monthExtraPayments = extraPayments.filter(
+    (item) => item.month === selectedMonth
+  );
+  const payslipExtraPayments = monthExtraPayments.filter(
+    (item) => item.staffId === selectedStaffId
+  );
+  const dashboardExtra = {
+    totalAmount: monthExtraPayments.reduce((sum, item) => sum + item.totalAmount, 0),
+    unpaidSalary: monthExtraPayments
+      .filter((item) => !item.salaryPaid)
+      .reduce((sum, item) => sum + item.totalAmount, 0),
+    count: monthExtraPayments.length,
+  };
+  const dashboard = {
+    totalAmount:
+      monthOrders.reduce((sum, order) => sum + order.amount, 0) +
+      dashboardExtra.totalAmount,
+    totalSalary:
+      monthOrders.reduce((sum, order) => sum + order.salaryAmount, 0) +
+      dashboardExtra.totalAmount,
+    totalCompany: monthOrders.reduce((sum, order) => sum + order.companyAmount, 0),
+    unpaidSalary:
+      monthOrders.filter((order) => !order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0) +
+      dashboardExtra.unpaidSalary,
+    orderCount: monthOrders.length + dashboardExtra.count,
+  };
+  const payslipExtra = {
+    totalAmount: payslipExtraPayments.reduce((sum, item) => sum + item.totalAmount, 0),
+    paidAmount: payslipExtraPayments
+      .filter((item) => item.salaryPaid)
+      .reduce((sum, item) => sum + item.totalAmount, 0),
+    unpaidAmount: payslipExtraPayments
+      .filter((item) => !item.salaryPaid)
+      .reduce((sum, item) => sum + item.totalAmount, 0),
+    count: payslipExtraPayments.length,
+  };
   const payslip = {
-    totalAmount: payslipOrders.reduce((sum, order) => sum + order.amount, 0),
-    salaryAmount: payslipOrders.reduce((sum, order) => sum + order.salaryAmount, 0),
+    totalAmount:
+      payslipOrders.reduce((sum, order) => sum + order.amount, 0) +
+      payslipExtra.totalAmount,
+    salaryAmount:
+      payslipOrders.reduce((sum, order) => sum + order.salaryAmount, 0) +
+      payslipExtra.totalAmount,
     companyAmount: payslipOrders.reduce((sum, order) => sum + order.companyAmount, 0),
-    paidAmount: payslipOrders.filter((order) => order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0),
-    unpaidAmount: payslipOrders.filter((order) => !order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0),
+    paidAmount:
+      payslipOrders.filter((order) => order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0) +
+      payslipExtra.paidAmount,
+    unpaidAmount:
+      payslipOrders.filter((order) => !order.salaryPaid).reduce((sum, order) => sum + order.salaryAmount, 0) +
+      payslipExtra.unpaidAmount,
   };
 
   async function addStaff() {
@@ -396,6 +480,83 @@ export default function Home() {
     });
     alert("新增成功");
   }
+  async function addExtraPayment() {
+    if (!extraPayForm.staffId) {
+      alert("請選擇人員");
+      return;
+    }
+    const count = Number(extraPayForm.count || 0);
+    const amount = Number(extraPayForm.amount || 0);
+    let baseAmount = 0;
+    let unitAmount = 0;
+    let finalCount = count;
+    let totalAmount = 0;
+    if (extraPayForm.roleType === "接待") {
+      baseAmount = 350;
+      unitAmount = 5;
+      totalAmount = baseAmount + unitAmount * finalCount;
+    }
+    if (extraPayForm.roleType === "行銷") {
+      baseAmount = amount;
+      unitAmount = 0;
+      finalCount = 0;
+      totalAmount = baseAmount;
+    }
+    if (extraPayForm.roleType === "技術審核官") {
+      baseAmount = 0;
+      unitAmount = 150;
+      totalAmount = unitAmount * finalCount;
+    }
+    if (extraPayForm.roleType === "娛樂審核官") {
+      baseAmount = 0;
+      unitAmount = 100;
+      totalAmount = unitAmount * finalCount;
+    }
+    if (totalAmount <= 0) {
+      alert("金額或人數不可為 0");
+      return;
+    }
+    const { data, error } = await supabase
+      .from("staff_extra_payments")
+      .insert({
+        staff_id: extraPayForm.staffId,
+        month: extraPayForm.month,
+        role_type: extraPayForm.roleType,
+        base_amount: baseAmount,
+        unit_amount: unitAmount,
+        count: finalCount,
+        total_amount: totalAmount,
+        note: extraPayForm.note,
+        salary_paid: false,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error("新增其他職位薪資失敗", error);
+      alert(error.message || "新增其他職位薪資失敗");
+      return;
+    }
+    const newExtraPayment: ExtraPayment = {
+      id: data.id,
+      staffId: data.staff_id,
+      month: data.month,
+      roleType: data.role_type,
+      baseAmount: Number(data.base_amount || 0),
+      unitAmount: Number(data.unit_amount || 0),
+      count: Number(data.count || 0),
+      totalAmount: Number(data.total_amount || 0),
+      note: data.note || "",
+      salaryPaid: Boolean(data.salary_paid),
+    };
+    setExtraPayments([...extraPayments, newExtraPayment]);
+    setExtraPayForm({
+      ...extraPayForm,
+      count: "0",
+      amount: "300",
+      note: "",
+    });
+    alert("已新增其他職位薪資");
+  }
   async function deleteOrder(orderId: number) {
     const ok = confirm("確定要刪除這筆訂單 / 打賞紀錄嗎？刪除後無法復原。");
     if (!ok) return;
@@ -446,7 +607,7 @@ export default function Home() {
 等級：${selectedStaff?.rank || "-"}
 結算月份：${selectedMonth}
 
-總訂單數：${payslipOrders.length} 筆
+總筆數：${payslipOrders.length + payslipExtra.count} 筆
 總金額：${money(payslip.totalAmount)}
 薪資實拿：${money(payslip.salaryAmount)}
 公司收入：${money(payslip.companyAmount)}
@@ -480,6 +641,22 @@ export default function Home() {
       .eq("assigned_player", payForm.staffId)
       .gte("completed_at", `${payForm.startDate}T00:00:00`)
       .lte("completed_at", `${payForm.endDate}T23:59:59`);
+    const startMonth = payForm.startDate.slice(0, 7);
+    const endMonth = payForm.endDate.slice(0, 7);
+    const { error: extraPayError } = await supabase
+      .from("staff_extra_payments")
+      .update({
+        salary_paid: true,
+        salary_paid_at: new Date().toISOString(),
+      })
+      .eq("staff_id", payForm.staffId)
+      .gte("month", startMonth)
+      .lte("month", endMonth);
+    if (extraPayError) {
+      alert("訂單已標記，但其他職位薪資標記失敗");
+      console.error(extraPayError);
+      return;
+    }
     if (error) {
       alert("標記已付款失敗");
       console.error(error);
@@ -497,6 +674,20 @@ export default function Home() {
               salaryPaid: true,
             }
           : order;
+      })
+    );
+    setExtraPayments((prev) =>
+      prev.map((item) => {
+        const inRange =
+          item.staffId === payForm.staffId &&
+          item.month >= startMonth &&
+          item.month <= endMonth;
+        return inRange
+          ? {
+              ...item,
+              salaryPaid: true,
+            }
+          : item;
       })
     );
     alert("已標記為已付款");
@@ -656,6 +847,7 @@ export default function Home() {
 
         {activePage === "orders" && (
           <section className="grid gap-6 md:grid-cols-[360px_1fr]">
+            <div className="space-y-6">
             <Card title="新增訂單 / 打賞">
               <div className="space-y-4">
                 <Input type="date" label="日期" value={orderForm.date} onChange={(value) => setOrderForm({ ...orderForm, date: value })} />
@@ -701,7 +893,82 @@ export default function Home() {
                 </button>
               </div>
             </Card>
+            <Card title="其他職位薪資">
+              <div className="space-y-4">
+                <label className="block text-sm text-zinc-400">
+                  人員
+                  <select
+                    value={extraPayForm.staffId}
+                    onChange={(e) =>
+                      setExtraPayForm({ ...extraPayForm, staffId: e.target.value })
+                    }
+                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-white"
+                  >
+                    {staffList.map((staff) => (
+                        <option key={staff.id} value={staff.id}>
+                        {staff.name}｜{staff.staffType}｜{staff.rank}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Input
+                  type="month"
+                  label="月份"
+                  value={extraPayForm.month}
+                  onChange={(value) =>
+                    setExtraPayForm({ ...extraPayForm, month: value })
+                  }
+                />
+                <Select
+                  label="職位"
+                  value={extraPayForm.roleType}
+                  onChange={(value) =>
+                    setExtraPayForm({ ...extraPayForm, roleType: value })
+                  }
+                options={["接待", "行銷", "技術審核官", "娛樂審核官"]}
+                />
+                {extraPayForm.roleType === "行銷" ? (
+                  <Input
+                    type="number"
+                    label="行銷月薪金額"
+                    value={extraPayForm.amount}
+                    onChange={(value) =>
+                      setExtraPayForm({ ...extraPayForm, amount: value })
+                     }
+                  />
+                ) : (
+                  <Input
+                    type="number"
+                    label={
+                      extraPayForm.roleType === "接待"
+                        ? "接待人數"
+                        : "審核人數"
+                    }
+                    value={extraPayForm.count}
+                    onChange={(value) =>
+                      setExtraPayForm({ ...extraPayForm, count: value })
+                    }
+                  />
+                )}
 
+                <Input
+                  label="備註"
+                  value={extraPayForm.note}
+                  onChange={(value) =>
+                    setExtraPayForm({ ...extraPayForm, note: value })
+                 }
+                />
+
+                <button
+                  onClick={addExtraPayment}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
+                >
+                  <Plus size={18} />
+                  新增其他職位薪資
+                </button>
+              </div>
+            </Card>
+            </div>
             <Card title="訂單紀錄">
               <OrderTable
                 orders={enrichedOrders.slice().reverse()}
@@ -802,10 +1069,11 @@ export default function Home() {
                   <Stat title="公司收入" value={money(payslip.companyAmount)} />
                   <Stat title="已發薪" value={money(payslip.paidAmount)} />
                   <Stat title="未發薪" value={money(payslip.unpaidAmount)} danger />
-                  <Stat title="筆數" value={`${payslipOrders.length} 筆`} />
+                  <Stat title="筆數" value={`${payslipOrders.length + payslipExtra.count} 筆`} />
                 </div>
 
                 <OrderTable orders={payslipOrders} />
+                <ExtraPaymentTable items={payslipExtraPayments} />
               </div>
             </div>
           </section>
@@ -1008,6 +1276,61 @@ function OrderTable({
               )}
             </div>
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function ExtraPaymentTable({ items }: { items: ExtraPayment[] }) {
+  if (!items.length) {
+    return (
+      <div className="rounded-2xl border border-dashed border-zinc-700 p-8 text-center text-sm text-zinc-500">
+        目前沒有其他職位薪資
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
+      <div className="hidden grid-cols-6 bg-zinc-950 px-4 py-3 text-xs text-zinc-500 md:grid">
+        <div>月份</div>
+        <div>職位</div>
+        <div>底薪</div>
+        <div>件數</div>
+        <div>總額</div>
+        <div>狀態</div>
+      </div>
+
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className="grid gap-2 border-t border-zinc-800 px-4 py-4 text-sm md:grid-cols-6 md:items-center"
+        >
+          <div className="text-zinc-400">{item.month}</div>
+          <div className="font-semibold text-violet-200">{item.roleType}</div>
+          <div className="text-zinc-300">
+            {money(item.baseAmount)}
+            {item.unitAmount > 0 ? ` + ${money(item.unitAmount)} x ${item.count}` : ""}
+          </div>
+          <div className="text-zinc-300">{item.count}</div>
+          <div className="font-bold text-violet-200">{money(item.totalAmount)}</div>
+          <div>
+            <span
+              className={`rounded-full px-2 py-1 text-xs ${
+                item.salaryPaid
+                  ? "bg-sky-500/20 text-sky-300"
+                  : "bg-amber-500/20 text-amber-300"
+              }`}
+            >
+              {item.salaryPaid ? "已發薪" : "未發薪"}
+            </span>
+          </div>
+
+          {item.note && (
+            <div className="text-xs text-zinc-500 md:col-span-6">
+              備註：{item.note}
+            </div>
+          )}
         </div>
       ))}
     </div>

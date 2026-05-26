@@ -43,6 +43,18 @@ type Order = {
   amount: number;
   paid: boolean;
 };
+type ExtraPayment = {
+  id: number;
+  staffId: string;
+  month: string;
+  roleType: string;
+  baseAmount: number;
+  unitAmount: number;
+  count: number;
+  totalAmount: number;
+  note: string;
+  paid: boolean;
+};
 
 const OPENING_END_DATE = "2026-09-01";
 const MANAGER_START_DATE = "2026-05-01";
@@ -130,6 +142,7 @@ function getDiscordId(user: any) {
 export default function StaffCenterPage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [extraPayments, setExtraPayments] = useState<ExtraPayment[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7)
@@ -158,15 +171,20 @@ export default function StaffCenterPage() {
       .select("*")
       .eq("assigned_player", discordId)
       .order("created_at", { ascending: false });
-
+    const { data: extraData, error: extraError } = await supabase
+      .from("staff_extra_payments")
+      .select("*")
+      .eq("staff_id", discordId)
+      .order("created_at", { ascending: false });
     if (staffError) {
       console.error("讀取員工失敗", staffError);
     }
-
     if (orderError) {
       console.error("讀取薪資紀錄失敗", orderError);
     }
-
+    if (extraError) {
+      console.error("讀取額外職位薪資失敗", extraError);
+    }
     if (staffError || !staffData) {
       setNotStaff(true);
       setLoading(false);
@@ -222,9 +240,24 @@ export default function StaffCenterPage() {
         paid: Boolean(item.salary_paid),
       };
     });
-
+    const formattedExtraPayments: ExtraPayment[] = (extraData || []).map((item) => ({
+      id: item.id,
+      staffId: item.staff_id,
+      month: item.month,
+      roleType: item.role_type,
+      baseAmount: Number(item.base_amount || 0),
+      unitAmount: Number(item.unit_amount || 0),
+      count: Number(item.count || 0),
+      totalAmount: Number(
+        item.total_amount ??
+          ((item.base_amount || 0) + (item.unit_amount || 0) * (item.count || 0))
+      ),
+      note: item.note || "",
+      paid: Boolean(item.salary_paid),
+    }));
     setStaffList(formattedStaff);
     setOrders(formattedOrders);
+    setExtraPayments(formattedExtraPayments);
     setBankForm({
       bankName: staffData.bank_name || "",
       bankCode: staffData.bank_code || "",
@@ -280,20 +313,57 @@ export default function StaffCenterPage() {
       };
     });
   }, [monthOrders, selectedStaff]);
-
-  const salary = {
-    totalAmount: enrichedOrders.reduce((sum, order) => sum + order.amount, 0),
-    salaryAmount: enrichedOrders.reduce((sum, order) => sum + order.salaryAmount, 0),
-    companyAmount: enrichedOrders.reduce((sum, order) => sum + order.companyAmount, 0),
-    paidAmount: enrichedOrders
-      .filter((order) => order.paid)
-      .reduce((sum, order) => sum + order.salaryAmount, 0),
-    unpaidAmount: enrichedOrders
-      .filter((order) => !order.paid)
-      .reduce((sum, order) => sum + order.salaryAmount, 0),
-    count: enrichedOrders.length,
+  const monthExtraPayments = useMemo(() => {
+    return extraPayments.filter(
+      (item) =>
+        item.staffId === selectedStaffId &&
+        item.month === selectedMonth
+    );
+  }, [extraPayments, selectedStaffId, selectedMonth]);
+  const extraSalary = {
+    totalAmount: monthExtraPayments.reduce(
+      (sum, item) => sum + item.totalAmount,
+      0
+    ),
+    paidAmount: monthExtraPayments
+      .filter((item) => item.paid)
+      .reduce((sum, item) => sum + item.totalAmount, 0),
+    unpaidAmount: monthExtraPayments
+      .filter((item) => !item.paid)
+      .reduce((sum, item) => sum + item.totalAmount, 0),
+    count: monthExtraPayments.length,
   };
-
+  const orderSalaryAmount = enrichedOrders.reduce(
+    (sum, order) => sum + order.salaryAmount,
+    0
+  );
+  const orderPaidAmount = enrichedOrders
+    .filter((order) => order.paid)
+    .reduce((sum, order) => sum + order.salaryAmount, 0);
+  const orderUnpaidAmount = enrichedOrders
+    .filter((order) => !order.paid)
+    .reduce((sum, order) => sum + order.salaryAmount, 0);
+  const salary = {
+    totalAmount:
+      enrichedOrders.reduce((sum, order) => sum + order.amount, 0) +
+      extraSalary.totalAmount,
+    salaryAmount:
+      orderSalaryAmount +
+      extraSalary.totalAmount,
+    companyAmount: enrichedOrders.reduce(
+      (sum, order) => sum + order.companyAmount,
+      0
+    ),
+    paidAmount:
+      orderPaidAmount +
+      extraSalary.paidAmount,
+    unpaidAmount:
+      orderUnpaidAmount +
+      extraSalary.unpaidAmount,
+    count:
+      enrichedOrders.length +
+      extraSalary.count,
+  };
   async function updateStatus(nextStatus: string) {
     if (!selectedStaff) return;
 
@@ -552,6 +622,9 @@ export default function StaffCenterPage() {
             <Card title="薪資明細">
               <OrderTable orders={enrichedOrders} />
             </Card>
+            <Card title="其他職位薪資">
+              <ExtraPaymentTable items={monthExtraPayments} />
+            </Card>
           </section>
         )}
 
@@ -790,6 +863,65 @@ function OrderTable({ orders }: { orders: any[] }) {
           <div className="text-xs text-zinc-500 md:col-span-7">
             {order.ruleName}｜人員 {order.salaryRate}%｜公司 {order.companyRate}%
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function ExtraPaymentTable({ items }: { items: ExtraPayment[] }) {
+  if (!items.length) {
+    return (
+      <div className="rounded-2xl border border-dashed border-zinc-700 p-8 text-center text-sm text-zinc-500">
+        目前沒有其他職位薪資
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-800">
+      <div className="hidden grid-cols-6 bg-zinc-950 px-4 py-3 text-xs text-zinc-500 md:grid">
+        <div>月份</div>
+        <div>職位</div>
+        <div>底薪</div>
+        <div>件數</div>
+        <div>總額</div>
+        <div>狀態</div>
+      </div>
+
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className="grid gap-2 border-t border-zinc-800 px-4 py-4 text-sm md:grid-cols-6 md:items-center"
+        >
+          <div className="text-zinc-400">{item.month}</div>
+          <div className="font-semibold text-violet-200">{item.roleType}</div>
+          <div className="text-zinc-300">
+            {money(item.baseAmount)}
+            {item.unitAmount > 0
+              ? ` + ${money(item.unitAmount)} x ${item.count}`
+              : ""}
+          </div>
+          <div className="text-zinc-300">{item.count}</div>
+          <div className="font-bold text-violet-200">
+            {money(item.totalAmount)}
+          </div>
+          <div>
+            <span
+              className={`rounded-full px-2 py-1 text-xs ${
+                item.paid
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "bg-rose-500/20 text-rose-300"
+              }`}
+            >
+              {item.paid ? "已發薪" : "未發薪"}
+            </span>
+          </div>
+
+          {item.note && (
+            <div className="text-xs text-zinc-500 md:col-span-6">
+              備註：{item.note}
+            </div>
+          )}
         </div>
       ))}
     </div>

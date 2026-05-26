@@ -131,7 +131,9 @@ export default function StaffCenterPage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState("2026-05");
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date().toISOString().slice(0, 7)
+  );
   const [activePage, setActivePage] = useState<"home" | "orders" | "salary" | "profile">("home");
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
@@ -154,7 +156,8 @@ export default function StaffCenterPage() {
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
-      .order("date", { ascending: false });
+      .eq("assigned_player", discordId)
+      .order("created_at", { ascending: false });
 
     if (staffError) {
       console.error("讀取員工失敗", staffError);
@@ -190,16 +193,35 @@ export default function StaffCenterPage() {
       },
     ];
 
-    const formattedOrders: Order[] = (orderData || []).map((item) => ({
-      id: item.id,
-      date: item.date,
-      staffId: item.staff_id,
-      customer: item.customer,
-      orderType: item.order_type,
-      item: item.item,
-      amount: item.amount,
-      paid: item.paid,
-    }));
+    const formattedOrders: Order[] = (orderData || []).map((item) => {
+      const service = item.service || item.item || "未填寫";
+      return {
+        id: item.id,
+        date:
+          item.completed_at?.slice(0, 10) ||
+          item.created_at?.slice(0, 10) ||
+          item.date ||
+          "",
+        staffId:
+          item.assigned_player ||
+          item.staff_id ||
+          "",
+        customer:
+          item.customer_username ||
+          item.customer_name ||
+          item.customer ||
+          item.customer_id ||
+          "未知客人",
+        orderType:
+          service.startsWith("打賞：")
+            ? "打賞"
+            : item.order_type || "訂單",
+        item: service,
+        amount:
+          Number(item.final_price ?? item.price ?? item.amount ?? 0),
+        paid: Boolean(item.salary_paid),
+      };
+    });
 
     setStaffList(formattedStaff);
     setOrders(formattedOrders);
@@ -761,7 +783,7 @@ function OrderTable({ orders }: { orders: any[] }) {
                 order.paid ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
               }`}
             >
-              {order.paid ? "已付款" : "未付款"}
+              {order.paid ? "已發薪" : "未發薪"}
             </span>
           </div>
 

@@ -163,6 +163,7 @@ export default function Home() {
     amount: "300",
     note: "",
   });
+  const [editingExtraId, setEditingExtraId] = useState<number | null>(null);
   async function checkAdmin() {
     setCheckingAdmin(true);
 
@@ -528,24 +529,35 @@ export default function Home() {
       alert("金額或人數不可為 0");
       return;
     }
-    const { data, error } = await supabase
-      .from("staff_extra_payments")
-      .insert({
-        staff_id: extraPayForm.staffId,
-        month: extraPayForm.month,
-        role_type: extraPayForm.roleType,
-        base_amount: baseAmount,
-        unit_amount: unitAmount,
-        count: finalCount,
-        total_amount: totalAmount,
-        note: extraPayForm.note,
-        salary_paid: false,
-      })
-      .select()
-      .single();
+    const payload = {
+      staff_id: extraPayForm.staffId,
+      month: extraPayForm.month,
+      role_type: extraPayForm.roleType,
+      base_amount: baseAmount,
+      unit_amount: unitAmount,
+      count: finalCount,
+      total_amount: totalAmount,
+      note: extraPayForm.note,
+    };
+    const query = editingExtraId
+      ? supabase
+          .from("staff_extra_payments")
+          .update(payload)
+          .eq("id", editingExtraId)
+          .select()
+          .single()
+      : supabase
+          .from("staff_extra_payments")
+          .insert({
+            ...payload,
+            salary_paid: false,
+          })
+          .select()
+          .single();
+    const { data, error } = await query;
     if (error) {
-      console.error("新增其他職位薪資失敗", error);
-      alert(error.message || "新增其他職位薪資失敗");
+      console.error("新增其他薪資失敗", error);
+      alert(error.message || "儲存其他薪資失敗");
       return;
     }
     const newExtraPayment: ExtraPayment = {
@@ -560,14 +572,52 @@ export default function Home() {
       note: data.note || "",
       salaryPaid: Boolean(data.salary_paid),
     };
-    setExtraPayments([...extraPayments, newExtraPayment]);
+    if (editingExtraId) {
+      setExtraPayments((prev) =>
+        prev.map((item) =>
+          item.id === editingExtraId ? newExtraPayment : item
+        )
+      );
+    } else {
+      setExtraPayments([...extraPayments, newExtraPayment]);
+    }
     setExtraPayForm({
       ...extraPayForm,
       count: "0",
       amount: "300",
       note: "",
     });
-    alert("已新增其他職位薪資");
+    setEditingExtraId(null);
+    alert(editingExtraId ? "已修改其他薪資" : "已新增其他薪資");
+  }
+  async function deleteExtraPayment(id: number) {
+    const ok = confirm("確定要刪除這筆其他薪資嗎？刪除後無法復原。");
+    if (!ok) return;
+    const { error } = await supabase
+      .from("staff_extra_payments")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      console.error("刪除其他薪資失敗", error);
+      alert(error.message || "刪除其他薪資失敗");
+      return;
+    }
+    setExtraPayments((prev) =>
+      prev.filter((item) => item.id !== id)
+    );
+    alert("已刪除其他薪資");
+  }
+  function startEditExtraPayment(item: ExtraPayment) {
+    setEditingExtraId(item.id);
+    setExtraPayForm({
+      staffId: item.staffId,
+      month: item.month,
+      roleType: item.roleType,
+      count: String(item.count || 0),
+      amount: String(item.baseAmount || item.totalAmount || 0),
+      note: item.note || "",
+    });
+    setActivePage("orders");
   }
   async function deleteOrder(orderId: number) {
     const ok = confirm("確定要刪除這筆訂單 / 打賞紀錄嗎？刪除後無法復原。");
@@ -665,7 +715,7 @@ export default function Home() {
       .gte("month", startMonth)
       .lte("month", endMonth);
     if (extraPayError) {
-      alert("訂單已標記，但其他職位薪資標記失敗");
+      alert("訂單已標記，但其他薪資標記失敗");
       console.error(extraPayError);
       return;
     }
@@ -905,7 +955,7 @@ export default function Home() {
                 </button>
               </div>
             </Card>
-            <Card title="其他職位薪資">
+            <Card title="其他薪資">
               <div className="space-y-4">
                 <label className="block text-sm text-zinc-400">
                   人員
@@ -981,8 +1031,25 @@ export default function Home() {
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
                 >
                   <Plus size={18} />
-                  新增其他職位薪資
+                  {editingExtraId ? "儲存修改" : "新增其他薪資"}
                 </button>
+                {editingExtraId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingExtraId(null);
+                      setExtraPayForm({
+                        ...extraPayForm,
+                        count: "0",
+                        amount: "300",
+                        note: "",
+                      });
+                    }}
+                    className="w-full rounded-xl border border-zinc-700 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800"
+                  >
+                    取消修改
+                  </button>
+                )}
               </div>
             </Card>
             </div>
@@ -1090,7 +1157,11 @@ export default function Home() {
                 </div>
 
                 <OrderTable orders={payslipOrders} />
-                <ExtraPaymentTable items={payslipExtraPayments} />
+                <ExtraPaymentTable
+                  items={payslipExtraPayments}
+                  onEdit={startEditExtraPayment}
+                  onDelete={deleteExtraPayment}
+                />
               </div>
             </div>
           </section>
@@ -1298,11 +1369,19 @@ function OrderTable({
     </div>
   );
 }
-function ExtraPaymentTable({ items }: { items: ExtraPayment[] }) {
+function ExtraPaymentTable({
+  items,
+  onEdit,
+  onDelete,
+}: {
+  items: ExtraPayment[];
+  onEdit?: (item: ExtraPayment) => void;
+  onDelete?: (id: number) => void;
+}) {
   if (!items.length) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-700 p-8 text-center text-sm text-zinc-500">
-        目前沒有其他職位薪資
+        目前沒有其他薪資
       </div>
     );
   }
@@ -1346,6 +1425,28 @@ function ExtraPaymentTable({ items }: { items: ExtraPayment[] }) {
           {item.note && (
             <div className="text-xs text-zinc-500 md:col-span-6">
               備註：{item.note}
+            </div>
+          )}
+          {(onEdit || onDelete) && (
+            <div className="flex gap-2 text-xs md:col-span-6">
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(item)}
+                  className="rounded-lg bg-sky-500/20 px-3 py-1 font-semibold text-sky-300 hover:bg-sky-500/30"
+                >
+                  修改
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(item.id)}
+                  className="rounded-lg bg-rose-500/20 px-3 py-1 font-semibold text-rose-300 hover:bg-rose-500/30"
+                >
+                  刪除
+                </button>
+              )}
             </div>
           )}
         </div>

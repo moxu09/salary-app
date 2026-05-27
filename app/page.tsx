@@ -230,30 +230,42 @@ export default function Home() {
     }));
     const formattedOrders: Order[] = (orderData || [])
       .filter((item) => item.assigned_player)
-      .map((item) => ({
-        id: item.id,
-        date:
-          item.completed_at?.slice(0, 10) ||
-          item.accepted_at?.slice(0, 10) ||
-          item.created_at?.slice(0, 10) ||
-          "",
-        staffId: item.assigned_player,
-        customer:
-          item.customer_name ||
-          item.customer_username ||
-          item.username ||
-          item.nickname ||
-          item.customer_id ||
-          "未填寫",
-        orderType:
-          String(item.service || "").startsWith("打賞：")
-            ? "打賞"
-            : "訂單",
-        item: `${item.game || ""}：${item.service || "未填寫"}`,
-        amount: Number(item.final_price || item.price || 0),
-        paid: Boolean(item.paid),
-        salaryPaid: Boolean(item.salary_paid),
-      }));
+      .flatMap((item) => {
+        const assignedPlayers = String(item.assigned_player || "")
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean);
+        const splitCount = assignedPlayers.length || 1;
+        const originalAmount = Number(item.final_price || item.price || 0);
+        const splitAmount = Math.round(originalAmount / splitCount);
+        return assignedPlayers.map((staffId) => ({
+          id: item.id,
+          date:
+            item.completed_at?.slice(0, 10) ||
+            item.accepted_at?.slice(0, 10) ||
+            item.created_at?.slice(0, 10) ||
+            "",
+          staffId,
+          customer:
+            item.customer_name ||
+            item.customer_username ||
+            item.username ||
+            item.nickname ||
+            item.customer_id ||
+            "未填寫",
+          orderType:
+            String(item.service || "").startsWith("打賞：")
+              ? "打賞"
+              : "訂單",
+          item:
+            splitCount > 1
+              ? `${item.game || ""}：${item.service || "未填寫"}｜${splitCount}人平分`
+              : `${item.game || ""}：${item.service || "未填寫"}`,
+          amount: splitAmount,
+          paid: Boolean(item.paid),
+          salaryPaid: Boolean(item.salary_paid),
+        }));
+      });
     const formattedExtraPayments: ExtraPayment[] = (extraData || []).map((item) => ({
       id: item.id,
       staffId: item.staff_id,

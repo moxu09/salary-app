@@ -169,7 +169,6 @@ export default function StaffCenterPage() {
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
-      .eq("assigned_player", discordId)
       .order("created_at", { ascending: false });
     const { data: extraData, error: extraError } = await supabase
       .from("staff_extra_payments")
@@ -211,19 +210,27 @@ export default function StaffCenterPage() {
       },
     ];
 
-    const formattedOrders: Order[] = (orderData || []).map((item) => {
+    const formattedOrders: Order[] = (orderData || []).flatMap((item) => {
       const service = item.service || item.item || "未填寫";
-      return {
+      const assignedPlayers = String(
+        item.assigned_player || item.staff_id || ""
+      )
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const splitCount = assignedPlayers.length || 1;
+      const originalAmount = Number(
+        item.final_price ?? item.price ?? item.amount ?? 0
+      );
+      const splitAmount = Math.round(originalAmount / splitCount);
+      return assignedPlayers.map((staffId) => ({
         id: item.id,
         date:
           item.completed_at?.slice(0, 10) ||
           item.created_at?.slice(0, 10) ||
           item.date ||
           "",
-        staffId:
-          item.assigned_player ||
-          item.staff_id ||
-          "",
+        staffId,
         customer:
           item.customer_username ||
           item.customer_name ||
@@ -234,11 +241,13 @@ export default function StaffCenterPage() {
           service.startsWith("打賞：")
             ? "打賞"
             : item.order_type || "訂單",
-        item: service,
-        amount:
-          Number(item.final_price ?? item.price ?? item.amount ?? 0),
+        item:
+          splitCount > 1
+            ? `${service}｜${splitCount}人平分`
+            : service,
+        amount: splitAmount,
         paid: Boolean(item.salary_paid),
-      };
+      }));
     });
     const formattedExtraPayments: ExtraPayment[] = (extraData || []).map((item) => ({
       id: item.id,

@@ -157,6 +157,20 @@ export default function StaffCenterPage() {
     bankAccount: "",
     bankHolder: "",
   });
+  const [availableTimeForm, setAvailableTimeForm] = useState({
+    mode: "weekday_holiday",
+    daily: "",
+    weekday: "",
+    holiday: "",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
+    sunday: "",
+    note: "",
+  });
   async function loadData(discordId: string) {
     setLoading(true);
 
@@ -165,7 +179,22 @@ export default function StaffCenterPage() {
       .select("*")
       .eq("discord_id", discordId)
       .single();
-
+    if (staffData?.available_time) {
+      setAvailableTimeForm({
+        mode: staffData.available_time.mode || "weekday_holiday",
+        daily: staffData.available_time.daily || "",
+        weekday: staffData.available_time.weekday || "",
+        holiday: staffData.available_time.holiday || "",
+        monday: staffData.available_time.monday || "",
+        tuesday: staffData.available_time.tuesday || "",
+        wednesday: staffData.available_time.wednesday || "",
+        thursday: staffData.available_time.thursday || "",
+        friday: staffData.available_time.friday || "",
+        saturday: staffData.available_time.saturday || "",
+        sunday: staffData.available_time.sunday || "",
+        note: staffData.available_time.note || "",
+      });
+    }
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
@@ -280,7 +309,24 @@ export default function StaffCenterPage() {
 
     setLoading(false);
   }
-
+  async function saveAvailableTime() {
+    if (!selectedStaff?.id) {
+      alert("找不到 Discord ID");
+      return;
+    }
+    const { error } = await supabase
+      .from("players")
+      .update({
+        available_time: availableTimeForm,
+      })
+      .eq("discord_id", selectedStaff.id);
+    if (error) {
+      console.error("儲存可接單時間失敗", error);
+      alert("儲存失敗");
+      return;
+    }
+    alert("已儲存可接單時間");
+  }
   useEffect(() => {
     async function checkLogin() {
       const { data } = await supabase.auth.getUser();
@@ -380,7 +426,7 @@ export default function StaffCenterPage() {
       .from("players")
       .update({
         status: nextStatus,
-        online_started_at: nextStatus === "online" ? new Date().toISOString() : null,
+        online_started_at: nextStatus === "available" ? new Date().toISOString() : null,
       })
       .eq("discord_id", selectedStaff.id);
 
@@ -396,7 +442,7 @@ export default function StaffCenterPage() {
           ? {
               ...staff,
               status: nextStatus,
-              onlineStartedAt: nextStatus === "online" ? new Date().toISOString() : null,
+              onlineStartedAt: nextStatus === "available" ? new Date().toISOString() : null,
             }
           : staff
       )
@@ -539,13 +585,13 @@ export default function StaffCenterPage() {
                   <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
                     <p className="text-sm text-zinc-500">目前狀態</p>
                     <p className="mt-1 text-2xl font-bold">
-                      {selectedStaff?.status === "online" ? "可接單" : "未接單"}
+                      {selectedStaff?.status === "available" ? "可接單" : "未接單"}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => updateStatus("online")}
+                      onClick={() => updateStatus("available")}
                       className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-white hover:bg-emerald-600"
                     >
                       <CheckCircle2 size={18} />
@@ -572,7 +618,110 @@ export default function StaffCenterPage() {
                 </div>
               </Card>
             </div>
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-5">
+              <h2 className="mb-4 text-xl font-bold">可接單時間設定</h2>
 
+              <div className="space-y-4">
+                <label className="block text-sm text-zinc-400">
+                  時間模式
+                  <select
+                    value={availableTimeForm.mode}
+                    onChange={(e) =>
+                      setAvailableTimeForm({
+                        ...availableTimeForm,
+                        mode: e.target.value,
+                      })
+                    }
+                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-white"
+                  >
+                    <option value="daily">每天固定</option>
+                    <option value="weekday_holiday">平日 / 假日</option>
+                    <option value="weekly">每週自訂</option>
+                  </select>
+                </label>
+                {availableTimeForm.mode === "daily" && (
+                  <Input
+                    label="每天可接時間"
+                    value={availableTimeForm.daily}
+                    onChange={(value) =>
+                      setAvailableTimeForm({
+                        ...availableTimeForm,
+                        daily: value,
+                      })
+                    }
+                  />
+                )}
+                {availableTimeForm.mode === "weekday_holiday" && (
+                  <>
+                    <Input
+                      label="平日可接時間"
+                      value={availableTimeForm.weekday}
+                      onChange={(value) =>
+                        setAvailableTimeForm({
+                          ...availableTimeForm,
+                          weekday: value,
+                        })
+                      }
+                    />
+
+                    <Input
+                      label="假日可接時間"
+                      value={availableTimeForm.holiday}
+                      onChange={(value) =>
+                        setAvailableTimeForm({
+                          ...availableTimeForm,
+                          holiday: value,
+                        })
+                      }
+                    />
+                  </>
+                )}
+
+                {availableTimeForm.mode === "weekly" && (
+                  <>
+                    {[
+                      ["monday", "週一"],
+                      ["tuesday", "週二"],
+                      ["wednesday", "週三"],
+                      ["thursday", "週四"],
+                      ["friday", "週五"],
+                      ["saturday", "週六"],
+                      ["sunday", "週日"],
+                    ].map(([key, label]) => (
+                      <Input
+                        key={key}
+                        label={`${label} 可接時間`}
+                        value={(availableTimeForm as any)[key]}
+                        onChange={(value) =>
+                          setAvailableTimeForm({
+                            ...availableTimeForm,
+                            [key]: value,
+                          })
+                        }
+                      />
+                    ))}
+                  </>
+                )}
+
+                <Input
+                  label="備註"
+                  value={availableTimeForm.note}
+                  onChange={(value) =>
+                    setAvailableTimeForm({
+                      ...availableTimeForm,
+                      note: value,
+                    })
+                  }
+                />
+
+                <button
+                  onClick={saveAvailableTime}
+                  className="w-full rounded-xl bg-violet-500 px-4 py-3 font-semibold hover:bg-violet-600"
+                >
+                  儲存可接單時間
+                </button>
+              </div>
+            </div>
             <Card title="最近訂單">
               <OrderTable orders={enrichedOrders.slice(0, 5)} />
             </Card>

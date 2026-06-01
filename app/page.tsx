@@ -238,9 +238,20 @@ export default function Home() {
         const splitCount = assignedPlayers.length || 1;
         const originalAmount = Number(item.final_price || item.price || 0);
         const splitAmount = Math.round(originalAmount / splitCount);
+        const isTip =
+          item.order_type === "打賞" ||
+          String(item.service || "").startsWith("打賞：") ||
+          String(item.game || "") === "打賞";
+        const displayItem = isTip
+          ? `打賞：${
+              item.order_item ||
+              String(item.service || "").replace("打賞：", "") ||
+              "未填寫"
+            }`
+          : `${item.game || ""}：${item.service || "未填寫"}`;
         return assignedPlayers.map((staffId) => ({
           id: item.id,
-          date:
+            date:
             item.completed_at?.slice(0, 10) ||
             item.accepted_at?.slice(0, 10) ||
             item.created_at?.slice(0, 10) ||
@@ -253,14 +264,11 @@ export default function Home() {
             item.nickname ||
             item.customer_id ||
             "未填寫",
-          orderType:
-            String(item.service || "").startsWith("打賞：")
-              ? "打賞"
-              : "訂單",
+          orderType: isTip ? "打賞" : "訂單",
           item:
             splitCount > 1
-              ? `${item.game || ""}：${item.service || "未填寫"}｜${splitCount}人平分`
-              : `${item.game || ""}：${item.service || "未填寫"}`,
+              ? `${displayItem}｜${splitCount}人平分`
+              : displayItem,
           amount: splitAmount,
           paid: Boolean(item.paid),
           salaryPaid: Boolean(item.salary_paid),
@@ -438,6 +446,8 @@ export default function Home() {
         customer_username: orderForm.customer.trim(),
         channel_id: `manual-${Date.now()}`,
         assigned_player: orderForm.staffId,
+        order_type: orderForm.orderType,
+        order_item: orderForm.item.trim(),
         service:
           orderForm.orderType === "打賞"
             ? `打賞：${orderForm.item.trim()}`

@@ -124,6 +124,17 @@ function getDiscordId(user: any) {
     ""
   );
 }
+function getTodayDate() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset();
+  const localDate = new Date(now.getTime() - offset * 60 * 1000);
+
+  return localDate.toISOString().split("T")[0];
+}
+
+function getCurrentMonth() {
+  return getTodayDate().slice(0, 7);
+}
 export default function Home() {
   const [activePage, setActivePage] = useState<"dashboard" | "staff" | "orders" | "payslip">("dashboard");
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -132,12 +143,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [notAdmin, setNotAdmin] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState("2026-05");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [payForm, setPayForm] = useState({
     staffId: "",
-    startDate: "2026-05-01",
-    endDate: "2026-05-31",
+    startDate: getTodayDate(),
+    endDate: getTodayDate(),
   });
   const [staffForm, setStaffForm] = useState({
     name: "",
@@ -147,7 +158,7 @@ export default function Home() {
   });
 
   const [orderForm, setOrderForm] = useState({
-    date: "2026-05-21",
+    date: getTodayDate(),
     staffId: "",
     customer: "",
     orderType: "訂單" as OrderType,
@@ -157,7 +168,7 @@ export default function Home() {
   });
   const [extraPayForm, setExtraPayForm] = useState({
     staffId: "",
-    month: new Date().toISOString().slice(0, 7),
+    month: getCurrentMonth(),
     roleType: "接待",
     count: "0",
     amount: "300",
@@ -208,6 +219,7 @@ export default function Home() {
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
+      .order("created_at", { ascending: false });
     const { data: extraData, error: extraError } = await supabase
       .from("staff_extra_payments")
       .select("*")
@@ -493,7 +505,7 @@ export default function Home() {
       paid: Boolean(data.paid),
       salaryPaid: Boolean(data.salary_paid),
     };
-    setOrders([...orders, newOrder]);
+    setOrders([newOrder, ...orders]);
     setOrderForm({
       ...orderForm,
       customer: "",
@@ -601,7 +613,7 @@ export default function Home() {
         )
       );
     } else {
-      setExtraPayments([...extraPayments, newExtraPayment]);
+      setExtraPayments([newExtraPayment, ...extraPayments]);
     }
     setExtraPayForm({
       ...extraPayForm,
@@ -870,7 +882,7 @@ export default function Home() {
             </Card>
 
             <Card title="最近訂單">
-              <OrderTable orders={enrichedOrders.slice().reverse()} />
+              <OrderTable orders={enrichedOrders} />
             </Card>
           </section>
         )}
@@ -1077,8 +1089,7 @@ export default function Home() {
             </div>
             <Card title="訂單紀錄">
               <OrderTable
-                orders={enrichedOrders.slice().reverse()}
-                onDeleteOrder={deleteOrder}
+                orders={enrichedOrders}                onDeleteOrder={deleteOrder}
                 onToggleCustomerPaid={toggleCustomerPaid}
               />
             </Card>

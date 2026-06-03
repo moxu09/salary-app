@@ -14,17 +14,21 @@ function AuthCallbackContent() {
   useEffect(() => {
     async function handleCallback() {
       try {
+        const href = window.location.href;
+        const hash = window.location.hash || "";
+
         const code = searchParams.get("code");
-        const error = searchParams.get("error");
+        const urlError = searchParams.get("error");
         const errorDescription = searchParams.get("error_description");
 
         setDebug(
           JSON.stringify(
             {
-              href: window.location.href,
+              href,
+              hash,
               hasCode: Boolean(code),
               codeStart: code ? code.slice(0, 8) : null,
-              error,
+              urlError,
               errorDescription,
             },
             null,
@@ -32,66 +36,77 @@ function AuthCallbackContent() {
           )
         );
 
-        if (error) {
-          setMessage(
-            `Discord / Supabase 回傳錯誤：${errorDescription || error}`
-          );
+        if (urlError) {
+          setMessage(`Discord / Supabase 回傳錯誤：${errorDescription || urlError}`);
           return;
         }
 
-        if (!code) {
-          setMessage(
-            "錯誤：callback 網址裡沒有 code，代表 OAuth 沒有成功回傳授權碼。"
-          );
+        // 先看是不是 Supabase 已經自己存好 session
+        const firstSession = await supabase.auth.getSession();
+
+        if (firstSession.data.session?.user) {
+          setMessage("登入成功，正在前往員工中心...");
+          setTimeout(() => router.replace("/staff"), 500);
           return;
         }
 
-        const { data, error: exchangeError } =
-          await supabase.auth.exchangeCodeForSession(code);
+        // PKCE：網址會有 ?code=
+        if (code) {
+          const { error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(code);
 
-        if (exchangeError) {
-          setMessage(`交換 session 失敗：${exchangeError.message}`);
+          if (exchangeError) {
+            setMessage(`交換 session 失敗：${exchangeError.message}`);
+            setDebug((prev) =>
+              `${prev}\n\nexchangeError:\n${JSON.stringify(exchangeError, null, 2)}`
+            );
+            return;
+          }
+
+          const afterExchange = await supabase.auth.getSession();
+
+          if (afterExchange.data.session?.user) {
+            setMessage("登入成功，正在前往員工中心...");
+            setTimeout(() => router.replace("/staff"), 500);
+            return;
+          }
+
+          setMessage("已交換 code，但仍讀不到 session。");
           setDebug((prev) =>
-            `${prev}\n\nexchangeError:\n${JSON.stringify(
-              exchangeError,
-              null,
-              2
-            )}`
+            `${prev}\n\nafterExchange:\n${JSON.stringify(afterExchange, null, 2)}`
           );
           return;
         }
 
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+        // Implicit flow：網址可能是 #access_token=...
+        if (hash.includes("access_token")) {
+          const params = new URLSearchParams(hash.replace(/^#/, ""));
+          const access_token = params.get("access_token");
+          const refresh_token = params.get("refresh_token");
 
-        if (sessionError || !session?.user) {
-          setMessage(
-            `已交換 code，但讀不到 session：${
-              sessionError?.message || "no session"
-            }`
-          );
+          if (access_token && refresh_token) {
+            const { error: setSessionError } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
 
-          setDebug((prev) =>
-            `${prev}\n\nexchangeData:\n${JSON.stringify(
-              data,
-              null,
-              2
-            )}\n\nsessionError:\n${JSON.stringify(sessionError, null, 2)}`
-          );
-          return;
+            if (setSessionError) {
+              setMessage(`寫入 session 失敗：${setSessionError.message}`);
+              setDebug((prev) =>
+                `${prev}\n\nsetSessionError:\n${JSON.stringify(setSessionError, null, 2)}`
+              );
+              return;
+            }
+
+            setMessage("登入成功，正在前往員工中心...");
+            setTimeout(() => router.replace("/staff"), 500);
+            return;
+          }
         }
 
-        setMessage("登入成功，正在前往員工中心...");
-
-        setDebug((prev) =>
-          `${prev}\n\nuser:\n${JSON.stringify(session.user, null, 2)}`
+        setMessage(
+          "錯誤：callback 沒有 code，也沒有 access_token。請檢查 Supabase Redirect URLs 與 lib/supabase.ts 的 flowType。"
         );
-
-        setTimeout(() => {
-          router.replace("/staff");
-        }, 800);
       } catch (err: any) {
         setMessage(`callback 發生未知錯誤：${err?.message || String(err)}`);
         setDebug((prev) => `${prev}\n\ncatch:\n${String(err)}`);
@@ -105,7 +120,6 @@ function AuthCallbackContent() {
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-white">
       <div className="w-full max-w-2xl rounded-3xl border border-zinc-800 bg-zinc-900 p-8">
         <p className="text-sm text-violet-300">深夜不關燈</p>
-
         <h1 className="mt-2 text-2xl font-bold">登入驗證中</h1>
 
         <p className="mt-4 rounded-xl bg-zinc-950 p-4 text-sm text-zinc-200">

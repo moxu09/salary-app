@@ -1,18 +1,25 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     async function handleCallback() {
       try {
-        const { error } = await supabase.auth.exchangeCodeForSession(
-          window.location.href
-        );
+        const code = searchParams.get("code");
+
+        if (!code) {
+          console.error("OAuth callback missing code");
+          router.replace("/login");
+          return;
+        }
+
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
           console.error("OAuth callback error:", error);
@@ -21,12 +28,12 @@ export default function AuthCallbackPage() {
         }
 
         const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-        if (userError || !user) {
-          console.error("Get user after callback error:", userError);
+        if (sessionError || !session?.user) {
+          console.error("Get session after callback error:", sessionError);
           router.replace("/login");
           return;
         }
@@ -39,7 +46,7 @@ export default function AuthCallbackPage() {
     }
 
     handleCallback();
-  }, [router]);
+  }, [router, searchParams]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-white">

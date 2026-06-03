@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const [message, setMessage] = useState("正在確認 Discord 登入狀態...");
   const [debug, setDebug] = useState("");
 
@@ -32,12 +33,16 @@ export default function AuthCallbackPage() {
         );
 
         if (error) {
-          setMessage(`Discord / Supabase 回傳錯誤：${errorDescription || error}`);
+          setMessage(
+            `Discord / Supabase 回傳錯誤：${errorDescription || error}`
+          );
           return;
         }
 
         if (!code) {
-          setMessage("錯誤：callback 網址裡沒有 code，代表 OAuth 沒有成功回傳授權碼。");
+          setMessage(
+            "錯誤：callback 網址裡沒有 code，代表 OAuth 沒有成功回傳授權碼。"
+          );
           return;
         }
 
@@ -47,7 +52,11 @@ export default function AuthCallbackPage() {
         if (exchangeError) {
           setMessage(`交換 session 失敗：${exchangeError.message}`);
           setDebug((prev) =>
-            `${prev}\n\nexchangeError:\n${JSON.stringify(exchangeError, null, 2)}`
+            `${prev}\n\nexchangeError:\n${JSON.stringify(
+              exchangeError,
+              null,
+              2
+            )}`
           );
           return;
         }
@@ -58,14 +67,24 @@ export default function AuthCallbackPage() {
         } = await supabase.auth.getSession();
 
         if (sessionError || !session?.user) {
-          setMessage(`已交換 code，但讀不到 session：${sessionError?.message || "no session"}`);
+          setMessage(
+            `已交換 code，但讀不到 session：${
+              sessionError?.message || "no session"
+            }`
+          );
+
           setDebug((prev) =>
-            `${prev}\n\nexchangeData:\n${JSON.stringify(data, null, 2)}\n\nsessionError:\n${JSON.stringify(sessionError, null, 2)}`
+            `${prev}\n\nexchangeData:\n${JSON.stringify(
+              data,
+              null,
+              2
+            )}\n\nsessionError:\n${JSON.stringify(sessionError, null, 2)}`
           );
           return;
         }
 
         setMessage("登入成功，正在前往員工中心...");
+
         setDebug((prev) =>
           `${prev}\n\nuser:\n${JSON.stringify(session.user, null, 2)}`
         );
@@ -86,6 +105,7 @@ export default function AuthCallbackPage() {
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-white">
       <div className="w-full max-w-2xl rounded-3xl border border-zinc-800 bg-zinc-900 p-8">
         <p className="text-sm text-violet-300">深夜不關燈</p>
+
         <h1 className="mt-2 text-2xl font-bold">登入驗證中</h1>
 
         <p className="mt-4 rounded-xl bg-zinc-950 p-4 text-sm text-zinc-200">
@@ -104,5 +124,25 @@ export default function AuthCallbackPage() {
         </button>
       </div>
     </main>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-white">
+          <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-900 p-8 text-center">
+            <p className="text-sm text-violet-300">深夜不關燈</p>
+            <h1 className="mt-2 text-2xl font-bold">登入驗證中...</h1>
+            <p className="mt-3 text-sm text-zinc-400">
+              正在載入 Discord 登入資訊
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <AuthCallbackContent />
+    </Suspense>
   );
 }

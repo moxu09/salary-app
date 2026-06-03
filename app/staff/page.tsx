@@ -329,22 +329,33 @@ export default function StaffCenterPage() {
   }
   useEffect(() => {
     async function checkLogin() {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        window.location.href = "/login";
-        return;
-      }
-      const discordId = getDiscordId(data.user);
-      console.log("Discord user:", data.user);
-      console.log("Discord ID:", discordId);
-      if (!discordId) {
-        setNotStaff(true);
-        setLoading(false);
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error("取得 session 失敗", sessionError);
+        }
+        if (!session?.user) {
+          window.location.href = "/login";
+          return;
+        }
+        const discordId = getDiscordId(session.user);
+        console.log("Discord user:", session.user);
+        console.log("Discord ID:", discordId);
+        if (!discordId) {
+          setNotStaff(true);
+          setLoading(false);
+          setAuthChecked(true);
+          return;
+        }
+        await loadData(discordId);
         setAuthChecked(true);
-        return;
+      } catch (error) {
+        console.error("員工登入檢查失敗", error);
+        window.location.href = "/login";
       }
-      await loadData(discordId);
-      setAuthChecked(true);
     }
     checkLogin();
   }, []);

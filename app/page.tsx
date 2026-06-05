@@ -17,7 +17,8 @@ type Staff = {
 };
 
 type Order = {
-  id: number;
+  id: string;       // 畫面用的唯一 id：orderId_staffId
+  orderId: string;  // 真正的 play_orders.id
   date: string;
   staffId: string;
   customer: string;
@@ -25,7 +26,7 @@ type Order = {
   item: string;
   amount: number;
   paid: boolean;        // 客人是否付款
-  salaryPaid: boolean;  // 員工是否已發薪
+  salaryPaid: boolean;  // 這位員工是否已發薪
 };
 type ExtraPayment = {
   id: number;
@@ -215,7 +216,7 @@ export default function Home() {
     const { data: staffData, error: staffError } = await supabase
       .from("players")
       .select("*")
-      .order("created_at", { ascending: false });    
+      .order("created_at", { ascending: false });
     const { data: orderData, error: orderError } = await supabase
       .from("play_orders")
       .select("*")
@@ -223,7 +224,10 @@ export default function Home() {
     const { data: extraData, error: extraError } = await supabase
       .from("staff_extra_payments")
       .select("*")
-      .order("created_at", { ascending: false }); 
+      .order("created_at", { ascending: false });
+    const { data: payoutData, error: payoutError } = await supabase
+      .from("salary_payout_items")
+      .select("*");
     if (staffError) {
       console.error("讀取員工失敗", staffError);
     }
@@ -233,13 +237,62 @@ export default function Home() {
     if (extraError) {
       console.error("讀取其他職位薪資失敗", extraError);
     }
+    if (payoutError) {
+      console.error("讀取薪資明細失敗", payoutError);
+    }
     const formattedStaff: Staff[] = (staffData || []).map((item) => ({
-      id: item.discord_id,
+     id: item.discord_id,
       name: item.name || item.discord_id,
       staffType: item.staff_type || "陪陪人員",
       rank: item.rank || "新手",
       paymentMethod: item.payment_method || "未設定",
     }));
+    const existingPayouts = payoutData || [];
+    const existingPayoutKeySet = new Set(
+      existingPayouts.map((item) => `${String(item.order_id)}_${String(item.staff_id)}`)
+    );
+    const missingPayoutRows: any[] = [];
+    for (const item of orderData || []) {
+      const assignedPlayers = String(item.assigned_player || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const splitCount = assignedPlayers.length || 1;
+      const originalAmount = Number(item.final_price || item.price || 0);
+      const splitAmount = Math.round(originalAmount / splitCount);
+      for (const staffId of assignedPlayers) {
+        const key = `${String(item.id)}_${staffId}`;
+        if (!existingPayoutKeySet.has(key)) {
+          missingPayoutRows.push({
+            order_id: String(item.id),
+            order_no: item.order_no || null,
+            staff_id: staffId,
+            gross_amount: splitAmount,
+            salary_paid: Boolean(item.salary_paid),
+            salary_paid_at: item.salary_paid_at || null,
+          });
+        }
+      }
+    }
+    let insertedPayouts: any[] = [];
+    if (missingPayoutRows.length > 0) {
+      const { data: inserted, error: insertPayoutError } = await supabase
+        .from("salary_payout_items")
+        .insert(missingPayoutRows)
+        .select();
+      if (insertPayoutError) {
+        console.error("建立薪資明細失敗", insertPayoutError);
+      } else {
+        insertedPayouts = inserted || [];
+      }
+    }
+    const allPayouts = [...existingPayouts, ...insertedPayouts];
+    const payoutMap = new Map(
+      allPayouts.map((item) => [
+        `${String(item.order_id)}_${String(item.staff_id)}`,
+        item,
+      ])
+    );
     const formattedOrders: Order[] = (orderData || [])
       .filter((item) => item.assigned_player)
       .flatMap((item) => {
@@ -261,30 +314,35 @@ export default function Home() {
               "未填寫"
             }`
           : `${item.game || ""}：${item.service || "未填寫"}`;
-        return assignedPlayers.map((staffId) => ({
-          id: item.id,
+        return assignedPlayers.map((staffId) => {
+          const payout =
+            payoutMap.get(`${String(item.id)}_${staffId}`);          
+          return {
+            id: `${String(item.id)}_${staffId}`,
+            orderId: String(item.id),
             date:
-            item.completed_at?.slice(0, 10) ||
-            item.accepted_at?.slice(0, 10) ||
-            item.created_at?.slice(0, 10) ||
-            "",
-          staffId,
-          customer:
-            item.customer_name ||
-            item.customer_username ||
-            item.username ||
-            item.nickname ||
-            item.customer_id ||
-            "未填寫",
-          orderType: isTip ? "打賞" : "訂單",
-          item:
-            splitCount > 1
-              ? `${displayItem}｜${splitCount}人平分`
-              : displayItem,
-          amount: splitAmount,
-          paid: Boolean(item.paid),
-          salaryPaid: Boolean(item.salary_paid),
-        }));
+              item.completed_at?.slice(0, 10) ||
+              item.accepted_at?.slice(0, 10) ||
+              item.created_at?.slice(0, 10) ||
+              "",
+            staffId,
+            customer:
+              item.customer_name ||
+              item.customer_username ||
+              item.username ||
+              item.nickname ||
+              item.customer_id ||
+              "未填寫",
+            orderType: isTip ? "打賞" : "訂單",
+            item:
+              splitCount > 1
+                ? `${displayItem}｜${splitCount}人平分`
+                : displayItem,
+            amount: splitAmount,
+            paid: Boolean(item.paid),
+            salaryPaid: Boolean(payout?.salary_paid),
+          };
+        });
       });
     const formattedExtraPayments: ExtraPayment[] = (extraData || []).map((item) => ({
       id: item.id,
@@ -297,7 +355,7 @@ export default function Home() {
       totalAmount: Number(
         item.total_amount ??
           ((item.base_amount || 0) + (item.unit_amount || 0) * (item.count || 0))
-      ),  
+      ),
       note: item.note || "",
       salaryPaid: Boolean(item.salary_paid),
     }));
@@ -327,13 +385,12 @@ export default function Home() {
   const staffMap = useMemo(() => {
     return Object.fromEntries(staffList.map((staff) => [staff.id, staff]));
   }, [staffList]);
-
   const enrichedOrders = useMemo(() => {
     return orders.map((order) => {
       const staff = staffMap[order.staffId];
       const result = calculateSalary(order, staff);
       return {
-        ...order,
+      ...order,
         staff,
         ...result,
       };
@@ -485,14 +542,39 @@ export default function Home() {
       alert(error.message || "新增訂單失敗");
       return;
     }
+              const { error: payoutError } = await supabase
+      .from("salary_payout_items")
+      .upsert(
+        {
+          order_id: String(data.id),
+          order_no: data.order_no || null,
+          staff_id: String(data.assigned_player),
+          gross_amount: Number(data.final_price || data.price || amount),
+          salary_paid: false,
+          salary_paid_at: null,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "order_id,staff_id",
+        }
+      );
+
+    if (payoutError) {
+      console.error("建立薪資明細失敗", payoutError);
+      alert(
+        "訂單已新增，但薪資明細建立失敗：" +
+          (payoutError.message || "未知錯誤")
+      );
+    }
     const newOrder: Order = {
-      id: data.id,
+      id: `${String(data.id)}_${String(data.assigned_player)}`,
+      orderId: String(data.id),
       date:
         data.completed_at?.slice(0, 10) ||
         data.accepted_at?.slice(0, 10) ||
         data.created_at?.slice(0, 10) ||
         orderForm.date,
-      staffId: data.assigned_player,
+      staffId: String(data.assigned_player),
       customer:
         data.customer_id ||
         orderForm.customer.trim(),
@@ -503,7 +585,7 @@ export default function Home() {
           : data.service,
       amount: Number(data.final_price || data.price || amount),
       paid: Boolean(data.paid),
-      salaryPaid: Boolean(data.salary_paid),
+      salaryPaid: false,
     };
     setOrders([newOrder, ...orders]);
     setOrderForm({
@@ -653,7 +735,7 @@ export default function Home() {
     });
     setActivePage("orders");
   }
-  async function deleteOrder(orderId: number) {
+  async function deleteOrder(orderId: string) {
     const ok = confirm("確定要刪除這筆訂單 / 打賞紀錄嗎？刪除後無法復原。");
     if (!ok) return;
     const { error } = await supabase
@@ -665,10 +747,10 @@ export default function Home() {
       alert(error.message || "刪除訂單失敗");
       return;
     }
-    setOrders((prev) => prev.filter((order) => order.id !== orderId));
+    setOrders((prev) => prev.filter((order) => order.orderId !== orderId));
     alert("已刪除訂單");
   }
-  async function toggleCustomerPaid(orderId: number, currentPaid: boolean) {
+  async function toggleCustomerPaid(orderId: string, currentPaid: boolean) {
     const nextPaid = !currentPaid;
     const { error } = await supabase
       .from("play_orders")
@@ -684,7 +766,7 @@ export default function Home() {
     }
     setOrders((prev) =>
       prev.map((order) =>
-        order.id === orderId
+        order.orderId === orderId
           ? {
               ...order,
               paid: nextPaid,
@@ -726,17 +808,32 @@ export default function Home() {
       alert("請選擇發薪時間段");
       return;
     }
-    const confirmText = `確定要把這位人員在 ${payForm.startDate} 到 ${payForm.endDate} 的薪資標記為已付款嗎？`;
+    const confirmText =
+      `確定要把這位人員在 ${payForm.startDate} 到 ${payForm.endDate} 的薪資標記為已付款嗎？`;
     if (!confirm(confirmText)) return;
-    const { error } = await supabase
-      .from("play_orders")
-      .update({
-        salary_paid: true,
-        salary_paid_at: new Date().toISOString(),
+    const targetOrderIds = orders
+      .filter((order) => {
+        return (
+          order.staffId === payForm.staffId &&
+          order.date >= payForm.startDate &&
+          order.date <= payForm.endDate
+        );
       })
-      .eq("assigned_player", payForm.staffId)
-      .gte("completed_at", `${payForm.startDate}T00:00:00`)
-      .lte("completed_at", `${payForm.endDate}T23:59:59`);
+      .map((order) => order.orderId);
+    const uniqueOrderIds = Array.from(new Set(targetOrderIds));      
+    let orderError = null;
+    if (uniqueOrderIds.length > 0) {
+      const { error } = await supabase
+        .from("salary_payout_items")
+        .update({
+          salary_paid: true,
+          salary_paid_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("staff_id", payForm.staffId)
+        .in("order_id", uniqueOrderIds);
+      orderError = error;
+    }
     const startMonth = payForm.startDate.slice(0, 7);
     const endMonth = payForm.endDate.slice(0, 7);
     const { error: extraPayError } = await supabase
@@ -748,14 +845,15 @@ export default function Home() {
       .eq("staff_id", payForm.staffId)
       .gte("month", startMonth)
       .lte("month", endMonth);
-    if (extraPayError) {
-      alert("訂單已標記，但其他薪資標記失敗");
-      console.error(extraPayError);
+
+    if (orderError) {
+      console.error("訂單薪資標記失敗", orderError);
+      alert(orderError.message || "訂單薪資標記失敗");
       return;
     }
-    if (error) {
-      alert("標記已付款失敗");
-      console.error(error);
+    if (extraPayError) {
+      console.error("其他薪資標記失敗", extraPayError);
+      alert(extraPayError.message || "其他薪資標記失敗");
       return;
     }
     setOrders((prev) =>
@@ -1313,8 +1411,8 @@ function OrderTable({
   onToggleCustomerPaid,
 }: {
   orders: any[];
-  onDeleteOrder?: (orderId: number) => void;
-  onToggleCustomerPaid?: (orderId: number, currentPaid: boolean) => void;
+  onDeleteOrder?: (orderId: string) => void;
+  onToggleCustomerPaid?: (orderId: string, currentPaid: boolean) => void;
 }) {
   if (!orders.length) {
     return (
@@ -1380,7 +1478,7 @@ function OrderTable({
               {onToggleCustomerPaid && (
                 <button
                   type="button"
-                  onClick={() => onToggleCustomerPaid(order.id, order.paid)}
+                  onClick={() => onToggleCustomerPaid(order.orderId, order.paid)}
                   className="w-fit rounded-lg bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
                 >
                   {order.paid ? "改為客人未付款" : "改為客人已付款"}
@@ -1389,7 +1487,7 @@ function OrderTable({
               {onDeleteOrder && (
                 <button
                   type="button"
-                  onClick={() => onDeleteOrder(order.id)}
+                  onClick={() => onDeleteOrder(order.orderId)}
                   className="w-fit rounded-lg bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/30"
                 >
                   刪除
